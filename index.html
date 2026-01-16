@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -6,8 +7,11 @@
   <title>Sneaky Scholar - The Ultimate Nose-Picking Adventure</title>
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 
   <style>
@@ -22,6 +26,7 @@
     @keyframes sparkle { 0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); } 50% { opacity: 1; transform: scale(1) rotate(180deg); } }
     @keyframes coinCollect { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-100px) scale(0.5); opacity: 0; } }
   </style>
+
 </head>
 <body>
   <div id="root"></div>
@@ -36,212 +41,8 @@
         this.context = new (window.AudioContext || window.webkitAudioContext)();
       },
       playBeep(frequency, duration, type = 'sine') {
-        if (!this.context) this.init();
-        const oscillator = this.context.createOscillator();
-        const gainNode = this.context.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(this.context.destination);
-        oscillator.frequency.value = frequency;
-        oscillator.type = type;
-        gainNode.gain.setValueAtTime(0.3, this.context.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.context.currentTime + duration);
-        oscillator.start(this.context.currentTime);
-        oscillator.stop(this.context.currentTime + duration);
-      },
-      playSuccess() {
-        this.playBeep(523.25, 0.1);
-        setTimeout(() => this.playBeep(659.25, 0.1), 100);
-        setTimeout(() => this.playBeep(783.99, 0.2), 200);
-      },
-      playFail() {
-        this.playBeep(200, 0.1, 'square');
-        setTimeout(() => this.playBeep(150, 0.2, 'square'), 100);
-      },
-      playClick() { this.playBeep(800, 0.05); },
-      playCoin() {
-        this.playBeep(1000, 0.05);
-        setTimeout(() => this.playBeep(1200, 0.05), 50);
-      },
-      playLevelUp() {
-        [523.25, 587.33, 659.25, 783.99, 880, 1046.50].forEach((freq, i) => {
-          setTimeout(() => this.playBeep(freq, 0.1), i * 80);
-        });
-      }
-    };
-
-    const LEVELS = [
-      { id: 1, name: "Classroom Rookie", time: 10, catches: 3, reward: 50, difficulty: 1 },
-      { id: 2, name: "Stealth Student", time: 12, catches: 3, reward: 75, difficulty: 1.2 },
-      { id: 3, name: "Ninja Scholar", time: 15, catches: 3, reward: 100, difficulty: 1.4 },
-      { id: 4, name: "Quick Fingers", time: 10, catches: 2, reward: 150, difficulty: 1.5 },
-      { id: 5, name: "Speed Demon", time: 8, catches: 2, reward: 200, difficulty: 1.7 },
-      { id: 6, name: "Master Picker", time: 12, catches: 2, reward: 250, difficulty: 1.8 },
-      { id: 7, name: "Eagle Eye Test", time: 10, catches: 1, reward: 300, difficulty: 2 },
-      { id: 8, name: "Lightning Round", time: 6, catches: 1, reward: 400, difficulty: 2.2 },
-      { id: 9, name: "Legendary Status", time: 8, catches: 1, reward: 500, difficulty: 2.5 },
-      { id: 10, name: "Ultimate Challenge", time: 5, catches: 1, reward: 1000, difficulty: 3 }
-    ];
-
-    const ACHIEVEMENTS = [
-      { id: 'first_win', name: 'First Success', desc: 'Complete your first level', reward: 50 },
-      { id: 'quick_draw', name: 'Quick Draw', desc: 'Complete a level in under 5 seconds', reward: 100 },
-      { id: 'perfect', name: 'Perfect Run', desc: 'Complete a level without being caught', reward: 150 },
-      { id: 'coin_collector', name: 'Coin Collector', desc: 'Earn 500 total coins', reward: 100 },
-      { id: 'level_5', name: 'Halfway There', desc: 'Reach level 5', reward: 200 },
-      { id: 'level_10', name: 'The Ultimate', desc: 'Complete all 10 levels', reward: 500 },
-      { id: 'speed_demon', name: 'Speed Demon', desc: 'Complete 5 levels in a row', reward: 250 },
-    ];
-
-    const SHOP_ITEMS = [
-      { id: 'rainbow_finger', name: 'Rainbow Finger', cost: 200, type: 'skin' },
-      { id: 'golden_finger', name: 'Golden Finger', cost: 500, type: 'skin' },
-      { id: 'ninja_finger', name: 'Ninja Finger', cost: 300, type: 'skin' },
-      { id: 'extra_life', name: 'Extra Life', cost: 100, type: 'powerup' },
-      { id: 'slow_time', name: 'Slow Motion', cost: 150, type: 'powerup' },
-      { id: 'invisible', name: 'Invisibility', cost: 250, type: 'powerup' },
-    ];
-
-    function Game() {
-      const [screen, setScreen] = useState('menu');
-      const [level, setLevel] = useState(1);
-      const [coins, setCoins] = useState(0);
-      const [unlockedLevels, setUnlockedLevels] = useState([1]);
-      const [achievements, setAchievements] = useState([]);
-      const [inventory, setInventory] = useState([]);
-      const [selectedSkin, setSelectedSkin] = useState('default');
-      const [consecutiveWins, setConsecutiveWins] = useState(0);
-
-      useEffect(() => {
-        const saved = localStorage.getItem('sneakyScholarSave');
-        if (saved) {
-          const data = JSON.parse(saved);
-          setCoins(data.coins || 0);
-          setUnlockedLevels(data.unlockedLevels || [1]);
-          setAchievements(data.achievements || []);
-          setInventory(data.inventory || []);
-          setSelectedSkin(data.selectedSkin || 'default');
-        }
-      }, []);
-
-      const saveGame = useCallback(() => {
-        const data = { coins, unlockedLevels, achievements, inventory, selectedSkin };
-        localStorage.setItem('sneakyScholarSave', JSON.stringify(data));
-      }, [coins, unlockedLevels, achievements, inventory, selectedSkin]);
-
-      useEffect(() => { saveGame(); }, [coins, unlockedLevels, achievements, inventory, selectedSkin]);
-
-      const unlockAchievement = (achievementId) => {
-        if (!achievements.includes(achievementId)) {
-          const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
-          setAchievements([...achievements, achievementId]);
-          setCoins(c => c + achievement.reward);
-          AudioManager.playLevelUp();
-          return achievement;
-        }
-        return null;
-      };
-
-      const handleLevelComplete = (time, caughtCount) => {
-        const currentLevel = LEVELS.find(l => l.id === level);
-        const reward = currentLevel.reward;
-        const bonusCoins = caughtCount === 0 ? 50 : 0;
-
-        setCoins(c => c + reward + bonusCoins);
-        AudioManager.playSuccess();
-
-        if (level < LEVELS.length && !unlockedLevels.includes(level + 1)) {
-          setUnlockedLevels([...unlockedLevels, level + 1]);
-        }
-
-        if (achievements.length === 0) unlockAchievement('first_win');
-        if (time < 5) unlockAchievement('quick_draw');
-        if (caughtCount === 0) unlockAchievement('perfect');
-        if (level === 5) unlockAchievement('level_5');
-        if (level === 10) unlockAchievement('level_10');
-
-        const newConsecutive = consecutiveWins + 1;
-        setConsecutiveWins(newConsecutive);
-        if (newConsecutive >= 5) unlockAchievement('speed_demon');
-
-        if (coins + reward + bonusCoins >= 500) unlockAchievement('coin_collector');
-      };
-
-      const handleLevelFail = () => {
-        AudioManager.playFail();
-        setConsecutiveWins(0);
-      };
-
-      if (screen === 'menu') {
-        return (
-          <MenuScreen
-            onStart={() => setScreen('game')}
-            onLevelSelect={() => setScreen('levelSelect')}
-            onShop={() => setScreen('shop')}
-            onAchievements={() => setScreen('achievements')}
-            coins={coins}
-          />
-        );
-      }
-
-      if (screen === 'levelSelect') {
-        return (
-          <LevelSelectScreen
-            levels={LEVELS}
-            unlockedLevels={unlockedLevels}
-            onSelectLevel={(lvl) => { setLevel(lvl); setScreen('game'); }}
-            onBack={() => setScreen('menu')}
-          />
-        );
-      }
-
-      if (screen === 'shop') {
-        return (
-          <ShopScreen
-            coins={coins}
-            inventory={inventory}
-            selectedSkin={selectedSkin}
-            onPurchase={(item) => { setCoins(c => c - item.cost); setInventory([...inventory, item.id]); AudioManager.playCoin(); }}
-            onSelectSkin={(skin) => setSelectedSkin(skin)}
-            onBack={() => setScreen('menu')}
-          />
-        );
-      }
-
-      if (screen === 'achievements') {
-        return (
-          <AchievementsScreen
-            achievements={achievements}
-            allAchievements={ACHIEVEMENTS}
-            onBack={() => setScreen('menu')}
-          />
-        );
-      }
-
-      if (screen === 'game') {
-        return (
-          <GameScreen
-            level={LEVELS.find(l => l.id === level)}
-            skin={selectedSkin}
-            onWin={(time, caughtCount) => { handleLevelComplete(time, caughtCount); setScreen('levelSelect'); }}
-            onLose={() => { handleLevelFail(); setScreen('levelSelect'); }}
-            onQuit={() => setScreen('menu')}
-          />
-        );
-      }
-
-      return null;
-    }
-
-    // Audio context for sound effects
-    const AudioManager = {
-      context: null,
-      init() {
-        this.context = new (window.AudioContext || window.webkitAudioContext)();
-      },
-      playBeep(frequency, duration, type = 'sine') {
         try {
           if (!this.context) this.init();
-          // iOS: resume context on first user gesture
           if (this.context.state === 'suspended') this.context.resume();
 
           const oscillator = this.context.createOscillator();
@@ -259,7 +60,7 @@
           oscillator.start(this.context.currentTime);
           oscillator.stop(this.context.currentTime + duration);
         } catch (e) {
-          // ignore audio errors
+          console.log('Audio error:', e);
         }
       },
       playSuccess() {
@@ -318,8 +119,9 @@
       { id: 'invisible', name: 'Invisibility', cost: 250, type: 'powerup' }
     ];
 
+    // Main Game Component
     function Game() {
-      const [screen, setScreen] = useState('menu'); // menu, game, levelSelect, shop, achievements
+      const [screen, setScreen] = useState('menu');
       const [level, setLevel] = useState(1);
       const [coins, setCoins] = useState(0);
       const [unlockedLevels, setUnlockedLevels] = useState([1]);
@@ -632,10 +434,6 @@
               );
             })}
           </div>
-
-          <div style={{ maxWidth: '800px', margin: '20px auto 0', background: 'rgba(255,255,255,0.7)', borderRadius: '15px', padding: '12px 14px', fontSize: '12px' }}>
-            Note: Powerups are listed but not wired into gameplay yet.
-          </div>
         </div>
       );
     }
@@ -706,12 +504,15 @@
       const maxCatches = level.catches;
       const timerRef = useRef(null);
       const teacherTimerRef = useRef(null);
+      const gameOverRef = useRef(false);
 
       useEffect(() => {
         timerRef.current = setInterval(() => setGameTime(t => t + 0.1), 100);
         scheduleTeacherLook();
-        return () => { clearInterval(timerRef.current); clearTimeout(teacherTimerRef.current); };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        return () => { 
+          clearInterval(timerRef.current); 
+          clearTimeout(teacherTimerRef.current); 
+        };
       }, []);
 
       const scheduleTeacherLook = () => {
@@ -719,20 +520,29 @@
         const lookDelay = Math.random() * baseDelay + 1000;
 
         teacherTimerRef.current = setTimeout(() => {
+          if (gameOverRef.current) return;
+          
           setTeacherWatching(true);
 
-          if (isMoving) {
-            setCaughtCount(c => {
-              const newCount = c + 1;
-              if (newCount >= maxCatches) endGame(false);
-              return newCount;
+          setTimeout(() => {
+            setTeacherWatching(prev => {
+              if (prev && isMoving) {
+                setCaughtCount(c => {
+                  const newCount = c + 1;
+                  if (newCount >= maxCatches) {
+                    endGame(false);
+                  }
+                  return newCount;
+                });
+                AudioManager.playFail();
+              }
+              return prev;
             });
-            AudioManager.playFail();
-          }
+          }, 100);
 
           const watchDuration = Math.random() * 1500 + 500;
           setTimeout(() => {
-            if (!gameOver) {
+            if (!gameOverRef.current) {
               setTeacherWatching(false);
               scheduleTeacherLook();
             }
@@ -741,6 +551,8 @@
       };
 
       const endGame = (victory) => {
+        if (gameOverRef.current) return;
+        gameOverRef.current = true;
         setGameOver(true);
         setWon(victory);
         clearInterval(timerRef.current);
@@ -757,7 +569,10 @@
           const speed = 0.5 * (1 + level.difficulty * 0.2);
           setFingerX(x => {
             const next = x + speed;
-            if (next >= targetX) { endGame(true); return targetX; }
+            if (next >= targetX) { 
+              endGame(true); 
+              return targetX; 
+            }
             return next;
           });
         }
@@ -897,9 +712,10 @@
       );
     }
 
-    // Render the app (React 18)
+    // Render the app
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<Game />);
   </script>
+
 </body>
 </html>
