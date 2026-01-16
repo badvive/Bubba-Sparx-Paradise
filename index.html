@@ -21,10 +21,30 @@
 
     @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
     @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-    @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+    @keyframes shake { 
+      0%, 100% { transform: translateX(0) rotate(0deg); } 
+      25% { transform: translateX(-10px) rotate(-5deg); } 
+      75% { transform: translateX(10px) rotate(5deg); } 
+    }
     @keyframes slideIn { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     @keyframes sparkle { 0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); } 50% { opacity: 1; transform: scale(1) rotate(180deg); } }
     @keyframes coinCollect { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-100px) scale(0.5); opacity: 0; } }
+    
+    @keyframes teacherTurn {
+      0% { transform: translateY(-50%) rotateY(180deg); }
+      100% { transform: translateY(-50%) rotateY(0deg); }
+    }
+    
+    @keyframes teacherTurnAway {
+      0% { transform: translateY(-50%) rotateY(0deg); }
+      100% { transform: translateY(-50%) rotateY(180deg); }
+    }
+
+    @keyframes caughtShake {
+      0%, 100% { transform: translate(-50%, -50%) rotate(0deg); }
+      10%, 30%, 50%, 70%, 90% { transform: translate(-50%, -50%) rotate(-10deg); }
+      20%, 40%, 60%, 80% { transform: translate(-50%, -50%) rotate(10deg); }
+    }
   </style>
 
 </head>
@@ -491,7 +511,7 @@
 
     // Game Screen Component
     function GameScreen({ level, skin, onWin, onLose, onQuit }) {
-      const [fingerX, setFingerX] = useState(50);
+      const [fingerX, setFingerX] = useState(10);
       const [teacherWatching, setTeacherWatching] = useState(false);
       const [caughtCount, setCaughtCount] = useState(0);
       const [gameTime, setGameTime] = useState(0);
@@ -499,12 +519,19 @@
       const [gameOver, setGameOver] = useState(false);
       const [won, setWon] = useState(false);
       const [particles, setParticles] = useState([]);
+      const [justCaught, setJustCaught] = useState(false);
+      const [isTurning, setIsTurning] = useState(false);
 
-      const targetX = 85;
+      const targetX = 75;
       const maxCatches = level.catches;
       const timerRef = useRef(null);
       const teacherTimerRef = useRef(null);
       const gameOverRef = useRef(false);
+      const movingRef = useRef(false);
+
+      useEffect(() => {
+        movingRef.current = isMoving;
+      }, [isMoving]);
 
       useEffect(() => {
         timerRef.current = setInterval(() => setGameTime(t => t + 0.1), 100);
@@ -522,36 +549,47 @@
         teacherTimerRef.current = setTimeout(() => {
           if (gameOverRef.current) return;
           
-          setTeacherWatching(true);
-
+          // Teacher starts turning around
+          setIsTurning(true);
+          
+          // After turn animation, check if caught
           setTimeout(() => {
-            setTeacherWatching(prev => {
-              if (prev && isMoving) {
-                setCaughtCount(c => {
-                  const newCount = c + 1;
-                  if (newCount >= maxCatches) {
-                    endGame(false);
-                  }
-                  return newCount;
-                });
+            setTeacherWatching(true);
+            setIsTurning(false);
+            
+            // Check if player was moving when teacher turned
+            if (movingRef.current) {
+              console.log('CAUGHT! Player was moving');
+              setCaughtCount(prev => {
+                const newCount = prev + 1;
+                console.log('New caught count:', newCount, 'Max:', maxCatches);
+                
+                setJustCaught(true);
+                setTimeout(() => setJustCaught(false), 500);
                 AudioManager.playFail();
-              }
-              return prev;
-            });
-          }, 100);
+                
+                if (newCount >= maxCatches) {
+                  console.log('Game Over - too many catches');
+                  setTimeout(() => endGame(false), 800);
+                }
+                return newCount;
+              });
+            }
+          }, 300);
 
-          const watchDuration = Math.random() * 1500 + 500;
+          const watchDuration = Math.random() * 1500 + 800;
           setTimeout(() => {
             if (!gameOverRef.current) {
               setTeacherWatching(false);
               scheduleTeacherLook();
             }
-          }, watchDuration);
+          }, watchDuration + 300);
         }, lookDelay);
       };
 
       const endGame = (victory) => {
         if (gameOverRef.current) return;
+        console.log('End game called, victory:', victory);
         gameOverRef.current = true;
         setGameOver(true);
         setWon(victory);
@@ -565,8 +603,8 @@
       };
 
       useEffect(() => {
-        if (isMoving && !teacherWatching && !gameOver) {
-          const speed = 0.5 * (1 + level.difficulty * 0.2);
+        if (isMoving && !teacherWatching && !isTurning && !gameOver) {
+          const speed = 0.8;
           setFingerX(x => {
             const next = x + speed;
             if (next >= targetX) { 
@@ -576,7 +614,7 @@
             return next;
           });
         }
-      }, [isMoving, teacherWatching, gameOver, level.difficulty]);
+      }, [isMoving, teacherWatching, isTurning, gameOver]);
 
       useEffect(() => {
         if (won) {
@@ -593,7 +631,7 @@
       const getSkinColor = () => {
         switch (skin) {
           case 'rainbow_finger':
-            return 'linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3)';
+            return 'linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3)';
           case 'golden_finger':
             return 'linear-gradient(135deg, #FFD700, #FFA500)';
           case 'ninja_finger':
@@ -624,17 +662,55 @@
 
           <div style={{ position: 'absolute', top: '60px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '20px', zIndex: 10 }}>
             <div style={{ background: 'rgba(255,255,255,0.9)', borderRadius: '10px', padding: '10px 20px', fontWeight: 'bold' }}>⏱️ {gameTime.toFixed(1)}s</div>
-            <div style={{ background: 'rgba(255,255,255,0.9)', borderRadius: '10px', padding: '10px 20px', fontWeight: 'bold' }}>❌ {caughtCount}/{maxCatches}</div>
+            <div style={{ 
+              background: caughtCount >= maxCatches - 1 ? 'rgba(255,0,0,0.9)' : 'rgba(255,255,255,0.9)', 
+              borderRadius: '10px', 
+              padding: '10px 20px', 
+              fontWeight: 'bold',
+              animation: justCaught ? 'shake 0.5s' : 'none'
+            }}>
+              ❌ {caughtCount}/{maxCatches}
+            </div>
           </div>
 
-          {teacherWatching && !gameOver && (
-            <div style={{ position: 'absolute', top: '30%', left: '50%', transform: 'translateX(-50%)', background: 'rgba(255,0,0,0.9)', color: 'white', padding: '20px 40px', borderRadius: '15px', fontSize: '24px', fontWeight: 'bold', animation: 'pulse 0.5s ease-in-out infinite', zIndex: 20, textAlign: 'center' }}>
-              👀 TEACHER LOOKING!<br/>STOP!
+          {(teacherWatching || isTurning) && !gameOver && (
+            <div style={{ 
+              position: 'absolute', 
+              top: '30%', 
+              left: '50%', 
+              transform: 'translateX(-50%)', 
+              background: 'rgba(255,0,0,0.9)', 
+              color: 'white', 
+              padding: '20px 40px', 
+              borderRadius: '15px', 
+              fontSize: '24px', 
+              fontWeight: 'bold', 
+              animation: teacherWatching ? 'pulse 0.5s ease-in-out infinite' : 'none', 
+              zIndex: 20, 
+              textAlign: 'center' 
+            }}>
+              {isTurning ? '⚠️ TURNING AROUND!' : '👀 TEACHER LOOKING!'}
+              <br/>STOP!
             </div>
           )}
 
           {gameOver && (
-            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: won ? 'rgba(0,255,0,0.95)' : 'rgba(255,0,0,0.95)', color: 'white', padding: '40px', borderRadius: '20px', fontSize: '32px', fontWeight: 'bold', animation: 'slideIn 0.5s ease-out', zIndex: 30, textAlign: 'center', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+            <div style={{ 
+              position: 'absolute', 
+              top: '50%', 
+              left: '50%', 
+              transform: 'translate(-50%, -50%)', 
+              background: won ? 'rgba(0,255,0,0.95)' : 'rgba(255,0,0,0.95)', 
+              color: 'white', 
+              padding: '40px', 
+              borderRadius: '20px', 
+              fontSize: '32px', 
+              fontWeight: 'bold', 
+              animation: won ? 'slideIn 0.5s ease-out' : 'caughtShake 0.5s ease-out', 
+              zIndex: 30, 
+              textAlign: 'center', 
+              boxShadow: '0 10px 40px rgba(0,0,0,0.5)' 
+            }}>
               {won ? (
                 <>
                   🎉 YOU WIN! 🎉<br/>
@@ -648,7 +724,7 @@
                 <>
                   😱 BUSTED! 😱<br/>
                   <div style={{ fontSize: '18px', marginTop: '15px' }}>
-                    Caught {maxCatches} times!<br/>
+                    Caught {caughtCount} times!<br/>
                     Try again!
                   </div>
                 </>
@@ -660,51 +736,192 @@
             <div key={p.id} style={{ position: 'absolute', left: `${p.x}%`, top: `${p.y}%`, fontSize: '30px', animation: `coinCollect 1s ease-out ${p.delay}s forwards`, zIndex: 25 }}>💰</div>
           ))}
 
-          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', maxWidth: '600px', height: '300px' }}>
-            <div style={{ position: 'absolute', bottom: '-40px', left: 0, right: 0, height: '20px', background: 'rgba(255,255,255,0.3)', borderRadius: '10px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${((fingerX - 50) / (targetX - 50)) * 100}%`, background: 'linear-gradient(90deg, #00ff00, #ffff00)', transition: 'width 0.1s' }} />
+          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '90%', maxWidth: '700px', height: '350px' }}>
+            <div style={{ position: 'absolute', bottom: '-50px', left: 0, right: 0, height: '25px', background: 'rgba(255,255,255,0.3)', borderRadius: '12px', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.5)' }}>
+              <div style={{ 
+                height: '100%', 
+                width: `${((fingerX - 10) / (targetX - 10)) * 100}%`, 
+                background: caughtCount >= maxCatches - 1 ? 'linear-gradient(90deg, #ff0000, #ff6b6b)' : 'linear-gradient(90deg, #00ff00, #ffff00)', 
+                transition: 'width 0.1s',
+                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)'
+              }} />
             </div>
 
-            <div style={{ position: 'absolute', right: '5%', top: '50%', transform: 'translateY(-50%)' }}>
-              <div style={{ width: '120px', height: '120px', borderRadius: '50%', background: '#ffd8a8', border: '4px solid #333', position: 'relative' }}>
-                {teacherWatching ? (
+            {/* Student face with nose */}
+            <div style={{ position: 'absolute', left: '15%', top: '50%', transform: 'translateY(-50%)' }}>
+              <div style={{ width: '140px', height: '140px', borderRadius: '50%', background: '#ffd8a8', border: '4px solid #333', position: 'relative', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }}>
+                {/* Eyes */}
+                <div style={{ position: 'absolute', width: '15px', height: '20px', borderRadius: '50%', background: 'white', border: '2px solid black', left: '30px', top: '45px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'black', position: 'absolute', left: '1px', top: '5px' }} />
+                </div>
+                <div style={{ position: 'absolute', width: '15px', height: '20px', borderRadius: '50%', background: 'white', border: '2px solid black', right: '30px', top: '45px' }}>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'black', position: 'absolute', right: '1px', top: '5px' }} />
+                </div>
+
+                {/* Nose - prominent and 3D */}
+                <div style={{ 
+                  position: 'absolute', 
+                  width: '42px', 
+                  height: '50px', 
+                  background: 'linear-gradient(135deg, #ffb380 0%, #ffa060 100%)', 
+                  border: '3px solid #333', 
+                  left: '50%', 
+                  top: '58%', 
+                  transform: 'translate(-50%, -50%)',
+                  borderRadius: '20px 20px 25px 25px',
+                  boxShadow: 'inset -2px -2px 5px rgba(0,0,0,0.2), 2px 2px 8px rgba(0,0,0,0.3)'
+                }}>
+                  {/* Nostrils - larger and more defined */}
+                  <div style={{ position: 'absolute', width: '10px', height: '12px', borderRadius: '50%', background: '#333', left: '8px', bottom: '8px', boxShadow: 'inset 0 2px 3px rgba(0,0,0,0.5)' }} />
+                  <div style={{ position: 'absolute', width: '10px', height: '12px', borderRadius: '50%', background: '#333', right: '8px', bottom: '8px', boxShadow: 'inset 0 2px 3px rgba(0,0,0,0.5)' }} />
+                  
+                  {/* Nose bridge highlight */}
+                  <div style={{ position: 'absolute', width: '15px', height: '25px', background: 'rgba(255,255,255,0.4)', borderRadius: '50%', left: '5px', top: '5px', filter: 'blur(3px)' }} />
+                </div>
+
+                {/* Mouth */}
+                <div style={{ position: 'absolute', width: '35px', height: '8px', borderRadius: '0 0 20px 20px', background: '#333', left: '50%', bottom: '25px', transform: 'translateX(-50%)' }} />
+              </div>
+            </div>
+
+            {/* Teacher in background */}
+            <div style={{ 
+              position: 'absolute', 
+              right: '5%', 
+              top: '50%', 
+              transform: teacherWatching ? 'translateY(-50%) rotateY(0deg)' : 'translateY(-50%) rotateY(180deg)',
+              transition: 'transform 0.3s ease-out',
+              transformStyle: 'preserve-3d',
+              perspective: '1000px'
+            }}>
+              <div style={{ 
+                width: '100px', 
+                height: '100px', 
+                borderRadius: '50%', 
+                background: '#e8d4b8', 
+                border: '3px solid #333', 
+                position: 'relative',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
+              }}>
+                {/* Teacher glasses */}
+                <div style={{ position: 'absolute', top: '35px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px' }}>
+                  <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '3px solid #333', background: 'rgba(255,255,255,0.3)' }} />
+                  <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '3px solid #333', background: 'rgba(255,255,255,0.3)' }} />
+                </div>
+
+                {/* Angry eyes when watching */}
+                {teacherWatching && (
                   <>
-                    <div style={{ position: 'absolute', width: '20px', height: '20px', borderRadius: '50%', background: 'white', border: '2px solid black', left: '25px', top: '35px' }}>
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'black', position: 'absolute', left: '2px', top: '2px' }} />
-                    </div>
-                    <div style={{ position: 'absolute', width: '20px', height: '20px', borderRadius: '50%', background: 'white', border: '2px solid black', right: '25px', top: '35px' }}>
-                      <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'black', position: 'absolute', left: '2px', top: '2px' }} />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ position: 'absolute', width: '25px', height: '3px', background: 'black', left: '20px', top: '40px', borderRadius: '2px' }} />
-                    <div style={{ position: 'absolute', width: '25px', height: '3px', background: 'black', right: '20px', top: '40px', borderRadius: '2px' }} />
+                    <div style={{ position: 'absolute', width: '12px', height: '12px', borderRadius: '50%', background: 'black', left: '25px', top: '40px' }} />
+                    <div style={{ position: 'absolute', width: '12px', height: '12px', borderRadius: '50%', background: 'black', right: '25px', top: '40px' }} />
+                    {/* Angry eyebrows */}
+                    <div style={{ position: 'absolute', width: '20px', height: '3px', background: 'black', left: '18px', top: '32px', transform: 'rotate(-15deg)' }} />
+                    <div style={{ position: 'absolute', width: '20px', height: '3px', background: 'black', right: '18px', top: '32px', transform: 'rotate(15deg)' }} />
                   </>
                 )}
 
-                <div style={{ position: 'absolute', width: '30px', height: '30px', borderRadius: '50%', background: '#ffb380', border: '3px solid #333', left: '50%', top: '55%', transform: 'translate(-50%, -50%)' }}>
-                  <div style={{ position: 'absolute', width: '6px', height: '6px', borderRadius: '50%', background: '#333', left: '6px', bottom: '6px' }} />
-                  <div style={{ position: 'absolute', width: '6px', height: '6px', borderRadius: '50%', background: '#333', right: '6px', bottom: '6px' }} />
-                </div>
-
-                <div style={{ position: 'absolute', width: '40px', height: '10px', borderRadius: teacherWatching ? '0' : '0 0 20px 20px', background: teacherWatching ? 'transparent' : '#333', border: teacherWatching ? '2px solid #333' : 'none', borderTop: 'none', left: '50%', bottom: '20px', transform: 'translateX(-50%)' }} />
+                {/* Mustache */}
+                <div style={{ position: 'absolute', width: '40px', height: '12px', background: '#333', borderRadius: '0 0 20px 20px', left: '50%', top: '60px', transform: 'translateX(-50%)' }} />
+                
+                {/* Mouth */}
+                <div style={{ position: 'absolute', width: '30px', height: '6px', background: teacherWatching ? '#ff0000' : '#333', borderRadius: teacherWatching ? '20px 20px 0 0' : '0 0 15px 15px', left: '50%', bottom: '20px', transform: 'translateX(-50%)' }} />
               </div>
-
-              {teacherWatching && (
-                <div style={{ position: 'absolute', top: '-60px', left: '50%', transform: 'translateX(-50%)', fontSize: '50px', animation: 'float 1s ease-in-out infinite' }}>👨‍🏫</div>
-              )}
+              
+              {/* Teacher body */}
+              <div style={{ width: '80px', height: '60px', background: '#2c3e50', position: 'absolute', top: '100px', left: '50%', transform: 'translateX(-50%)', borderRadius: '0 0 15px 15px', border: '3px solid #333', borderTop: 'none' }} />
             </div>
 
-            <div style={{ position: 'absolute', left: `${fingerX}%`, top: '50%', transform: 'translateY(-50%)', transition: 'left 0.1s linear' }}>
-              <div style={{ width: '60px', height: '40px', background: getSkinColor(), borderRadius: '20px 40px 40px 20px', border: '3px solid #333', position: 'relative' }}>
-                <div style={{ position: 'absolute', right: '5px', top: '8px', width: '20px', height: '15px', background: 'rgba(255,255,255,0.8)', borderRadius: '50%', border: '2px solid #333' }} />
+            {/* Finger - animated to go toward nostril */}
+            <div style={{ 
+              position: 'absolute', 
+              left: `${fingerX}%`, 
+              top: '50%', 
+              transform: 'translateY(-50%)', 
+              transition: 'left 0.1s linear',
+              zIndex: 5
+            }}>
+              {/* Hand/Palm */}
+              <div style={{ 
+                width: '45px', 
+                height: '55px', 
+                background: getSkinColor(), 
+                borderRadius: '40% 60% 60% 40% / 60% 60% 40% 40%',
+                border: '3px solid #333', 
+                position: 'relative',
+                boxShadow: '2px 2px 8px rgba(0,0,0,0.3)'
+              }}>
+                {/* Index Finger - pointing */}
+                <div style={{ 
+                  position: 'absolute', 
+                  right: '-25px', 
+                  top: '5px',
+                  width: '40px',
+                  height: '22px',
+                  background: getSkinColor(),
+                  borderRadius: '0 50% 50% 0',
+                  border: '3px solid #333',
+                  borderLeft: 'none',
+                  boxShadow: '2px 2px 5px rgba(0,0,0,0.2)'
+                }}>
+                  {/* Fingertip */}
+                  <div style={{ 
+                    position: 'absolute',
+                    right: '-3px',
+                    top: '-3px',
+                    width: '18px',
+                    height: '28px',
+                    background: getSkinColor(),
+                    borderRadius: '50%',
+                    border: '3px solid #333',
+                    boxShadow: 'inset -2px -2px 4px rgba(0,0,0,0.2)'
+                  }} />
+                  
+                  {/* Fingernail */}
+                  <div style={{ 
+                    position: 'absolute', 
+                    right: '2px', 
+                    top: '2px', 
+                    width: '12px', 
+                    height: '10px', 
+                    background: 'rgba(255,255,255,0.9)', 
+                    borderRadius: '50%', 
+                    border: '2px solid #333',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)'
+                  }} />
+                </div>
+
+                {/* Thumb */}
+                <div style={{ 
+                  position: 'absolute', 
+                  left: '5px', 
+                  bottom: '-10px',
+                  width: '20px',
+                  height: '28px',
+                  background: getSkinColor(),
+                  borderRadius: '50% 20% 40% 50%',
+                  border: '3px solid #333',
+                  transform: 'rotate(-20deg)'
+                }} />
+
+                {/* Other fingers (curled) */}
+                <div style={{ position: 'absolute', bottom: '5px', right: '8px', display: 'flex', gap: '2px' }}>
+                  {[0, 1, 2].map(i => (
+                    <div key={i} style={{ 
+                      width: '8px', 
+                      height: '15px', 
+                      background: getSkinColor(), 
+                      borderRadius: '50% 50% 0 0',
+                      border: '2px solid #333',
+                      borderBottom: 'none'
+                    }} />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
           {!gameOver && (
-            <div style={{ position: 'absolute', bottom: '80px', left: '50%', transform: 'translateX(-50%)', color: 'white', fontSize: '18px', fontWeight: 'bold', textAlign: 'center', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
+            <div style={{ position: 'absolute', bottom: '100px', left: '50%', transform: 'translateX(-50%)', color: 'white', fontSize: '18px', fontWeight: 'bold', textAlign: 'center', textShadow: '2px 2px 4px rgba(0,0,0,0.5)' }}>
               {isMoving ? '🏃 Moving...' : '👆 Tap & Hold to Move'}
             </div>
           )}
