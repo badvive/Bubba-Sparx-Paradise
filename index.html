@@ -1,1095 +1,503 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Sneaky Scholar - The Ultimate Nose-Picking Adventure</title>
-
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
-
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { font-family: 'Fredoka', sans-serif; overflow: hidden; touch-action: none; background: #1a1a2e; }
-    #root { width: 100vw; height: 100vh; }
-
-    @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
-    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-    @keyframes shake { 
-      0%, 100% { transform: translateX(0) rotate(0deg); } 
-      25% { transform: translateX(-10px) rotate(-5deg); } 
-      75% { transform: translateX(10px) rotate(5deg); } 
-    }
-    @keyframes slideIn { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    @keyframes sparkle { 0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); } 50% { opacity: 1; transform: scale(1) rotate(180deg); } }
-    @keyframes coinCollect { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-100px) scale(0.5); opacity: 0; } }
-    
-    @keyframes teacherTurn {
-      0% { transform: rotateY(180deg) scale(0.6); }
-      100% { transform: rotateY(0deg) scale(0.6); }
-    }
-    
-    @keyframes teacherTurnAway {
-      0% { transform: rotateY(0deg) scale(0.6); }
-      100% { transform: rotateY(180deg) scale(0.6); }
-    }
-
-    @keyframes caughtShake {
-      0%, 100% { transform: translate(-50%, -50%) rotate(0deg); }
-      10%, 30%, 50%, 70%, 90% { transform: translate(-50%, -50%) rotate(-10deg); }
-      20%, 40%, 60%, 80% { transform: translate(-50%, -50%) rotate(10deg); }
-    }
-
-    @keyframes pixelate {
-      0% { filter: blur(0px); }
-      50% { filter: blur(2px); }
-      100% { filter: blur(0px); }
-    }
-  </style>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Winter Survival Factory</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #e0f7fa; /* Ice blue background */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* Prevent zooming on mobile */
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            display: flex;
+            gap: 20px;
+        }
+        .stat-box {
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            pointer-events: none;
+            text-align: center;
+            font-size: 14px;
+            color: #333;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
 </head>
 <body>
-  <div id="root"></div>
 
-  <script type="text/babel">
-    const { useState, useEffect, useRef, useCallback } = React;
+    <div id="ui-layer">
+        <div class="stat-box">
+            <span>💵</span> <span id="money-display">0</span>
+        </div>
+        <div class="stat-box">
+            <span>🥩</span> <span id="meat-display">0/10</span>
+        </div>
+    </div>
 
-    // Audio Manager
-    const AudioManager = {
-      context: null,
-      init() {
-        this.context = new (window.AudioContext || window.webkitAudioContext)();
-      },
-      playBeep(frequency, duration, type = 'sine') {
-        try {
-          if (!this.context) this.init();
-          if (this.context.state === 'suspended') this.context.resume();
+    <div id="instructions">
+        Tap/Click to move • Gather Meat from Bears • Cook at Grill • Serve at Table
+    </div>
 
-          const oscillator = this.context.createOscillator();
-          const gainNode = this.context.createGain();
+    <canvas id="gameCanvas"></canvas>
 
-          oscillator.connect(gainNode);
-          gainNode.connect(this.context.destination);
+<script>
+/**
+ * WINTER SURVIVAL FACTORY
+ * A simple idle/management game logic implementation.
+ */
 
-          oscillator.frequency.value = frequency;
-          oscillator.type = type;
+// --- CONFIGURATION ---
+const CANVAS = document.getElementById('gameCanvas');
+const CTX = CANVAS.getContext('2d');
 
-          gainNode.gain.setValueAtTime(0.3, this.context.currentTime);
-          gainNode.gain.exponentialRampToValueAtTime(0.01, this.context.currentTime + duration);
+const UI_MONEY = document.getElementById('money-display');
+const UI_MEAT = document.getElementById('meat-display');
 
-          oscillator.start(this.context.currentTime);
-          oscillator.stop(this.context.currentTime + duration);
-        } catch (e) {
-          console.log('Audio error:', e);
-        }
-      },
-      playSuccess() {
-        this.playBeep(523.25, 0.1);
-        setTimeout(() => this.playBeep(659.25, 0.1), 100);
-        setTimeout(() => this.playBeep(783.99, 0.2), 200);
-      },
-      playFail() {
-        this.playBeep(200, 0.1, 'square');
-        setTimeout(() => this.playBeep(150, 0.2, 'square'), 100);
-      },
-      playClick() {
-        this.playBeep(800, 0.05);
-      },
-      playCoin() {
-        this.playBeep(1000, 0.05);
-        setTimeout(() => this.playBeep(1200, 0.05), 50);
-      },
-      playLevelUp() {
-        [523.25, 587.33, 659.25, 783.99, 880, 1046.5].forEach((freq, i) => {
-          setTimeout(() => this.playBeep(freq, 0.1), i * 80);
-        });
-      }
+// Game State
+let money = 0;
+let lastTime = 0;
+const MAX_CARRY = 10; 
+let unlockLevel = 1;
+
+// Assets (Emojis as sprites)
+const SPRITES = {
+    player: '👨‍🍳',
+    bear: '🐻‍❄️',
+    meat_raw: '🥩',
+    meat_cooked: '🍗',
+    money: '💵',
+    grill: '🔥',
+    table: '🍽️',
+    customer: '🥶',
+    snow: '❄️'
+};
+
+// Input
+const input = { x: 0, y: 0, active: false };
+
+// Entities
+const player = {
+    x: 0, y: 0, 
+    targetX: 0, targetY: 0,
+    speed: 200, // pixels per second
+    stack: [] // Array of 'raw' or 'cooked'
+};
+
+const entities = {
+    bears: [],
+    machines: [],
+    tables: [],
+    customers: [],
+    particles: [],
+    triggers: [] // Unlock zones
+};
+
+// --- CORE FUNCTIONS ---
+
+function resize() {
+    CANVAS.width = window.innerWidth;
+    CANVAS.height = window.innerHeight;
+    
+    // Reset player position if out of bounds (or on init)
+    if (player.x === 0) {
+        player.x = CANVAS.width / 2;
+        player.y = CANVAS.height / 2;
+        player.targetX = player.x;
+        player.targetY = player.y;
+    }
+}
+
+function init() {
+    resize();
+    window.addEventListener('resize', resize);
+    
+    // Mouse/Touch Input
+    const setTarget = (e) => {
+        const rect = CANVAS.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        player.targetX = clientX - rect.left;
+        player.targetY = clientY - rect.top;
+        input.active = true;
     };
 
-    // Game data
-    const LEVELS = [
-      { id: 1, name: "Classroom Rookie", time: 10, catches: 3, reward: 50, difficulty: 1 },
-      { id: 2, name: "Stealth Student", time: 12, catches: 3, reward: 75, difficulty: 1.2 },
-      { id: 3, name: "Ninja Scholar", time: 15, catches: 3, reward: 100, difficulty: 1.4 },
-      { id: 4, name: "Quick Fingers", time: 10, catches: 2, reward: 150, difficulty: 1.5 },
-      { id: 5, name: "Speed Demon", time: 8, catches: 2, reward: 200, difficulty: 1.7 },
-      { id: 6, name: "Master Picker", time: 12, catches: 2, reward: 250, difficulty: 1.8 },
-      { id: 7, name: "Eagle Eye Test", time: 10, catches: 1, reward: 300, difficulty: 2 },
-      { id: 8, name: "Lightning Round", time: 6, catches: 1, reward: 400, difficulty: 2.2 },
-      { id: 9, name: "Legendary Status", time: 8, catches: 1, reward: 500, difficulty: 2.5 },
-      { id: 10, name: "Ultimate Challenge", time: 5, catches: 1, reward: 1000, difficulty: 3 }
-    ];
+    CANVAS.addEventListener('mousedown', setTarget);
+    CANVAS.addEventListener('touchstart', setTarget, {passive: false});
+    // Continuously update target if dragging
+    CANVAS.addEventListener('mousemove', (e) => { if(e.buttons === 1) setTarget(e); });
+    CANVAS.addEventListener('touchmove', (e) => { e.preventDefault(); setTarget(e); }, {passive: false});
 
-    const ACHIEVEMENTS = [
-      { id: 'first_win', name: 'First Success', desc: 'Complete your first level', reward: 50 },
-      { id: 'quick_draw', name: 'Quick Draw', desc: 'Complete a level in under 5 seconds', reward: 100 },
-      { id: 'perfect', name: 'Perfect Run', desc: 'Complete a level without being caught', reward: 150 },
-      { id: 'coin_collector', name: 'Coin Collector', desc: 'Earn 500 total coins', reward: 100 },
-      { id: 'level_5', name: 'Halfway There', desc: 'Reach level 5', reward: 200 },
-      { id: 'level_10', name: 'The Ultimate', desc: 'Complete all 10 levels', reward: 500 },
-      { id: 'speed_demon', name: 'Speed Demon', desc: 'Complete 5 levels in a row', reward: 250 }
-    ];
+    // Setup Level 1
+    setupLevel();
 
-    const SHOP_ITEMS = [
-      { id: 'rainbow_finger', name: 'Rainbow Finger', cost: 200, type: 'skin' },
-      { id: 'golden_finger', name: 'Golden Finger', cost: 500, type: 'skin' },
-      { id: 'ninja_finger', name: 'Ninja Finger', cost: 300, type: 'skin' },
-      { id: 'extra_life', name: 'Extra Life', cost: 100, type: 'powerup' },
-      { id: 'slow_time', name: 'Slow Motion', cost: 150, type: 'powerup' },
-      { id: 'invisible', name: 'Invisibility', cost: 250, type: 'powerup' }
-    ];
+    requestAnimationFrame(gameLoop);
+}
 
-    // Main Game Component
-    function Game() {
-      const [screen, setScreen] = useState('menu');
-      const [level, setLevel] = useState(1);
-      const [coins, setCoins] = useState(0);
-      const [unlockedLevels, setUnlockedLevels] = useState([1]);
-      const [achievements, setAchievements] = useState([]);
-      const [inventory, setInventory] = useState([]);
-      const [selectedSkin, setSelectedSkin] = useState('default');
-      const [consecutiveWins, setConsecutiveWins] = useState(0);
+function setupLevel() {
+    // Add Grill
+    entities.machines.push({
+        x: CANVAS.width / 2 - 100,
+        y: CANVAS.height / 2 + 50,
+        w: 60, h: 60,
+        timer: 0,
+        cookingTime: 2000, // ms
+        input: 0,
+        output: 0,
+        maxOutput: 3
+    });
 
-      useEffect(() => {
-        const saved = localStorage.getItem('sneakyScholarSave');
-        if (saved) {
-          const data = JSON.parse(saved);
-          setCoins(data.coins || 0);
-          setUnlockedLevels(data.unlockedLevels || [1]);
-          setAchievements(data.achievements || []);
-          setInventory(data.inventory || []);
-          setSelectedSkin(data.selectedSkin || 'default');
+    // Add Table
+    entities.tables.push({
+        x: CANVAS.width / 2 + 100,
+        y: CANVAS.height / 2 + 50,
+        w: 60, h: 60,
+        food: 0,
+        maxFood: 5
+    });
+
+    // Add Trigger (Unlock Zone)
+    entities.triggers.push({
+        x: CANVAS.width / 2,
+        y: CANVAS.height - 80,
+        w: 120, h: 60,
+        cost: 100,
+        unlocked: false,
+        label: "Unlock Speed"
+    });
+}
+
+// --- GAME LOGIC ---
+
+function spawnBear() {
+    if (entities.bears.length < 5 + (unlockLevel * 2)) {
+        entities.bears.push({
+            x: Math.random() * (CANVAS.width - 60) + 30,
+            y: Math.random() * (CANVAS.height / 2 - 100) + 50, // Top half of screen
+            radius: 20,
+            alive: true
+        });
+    }
+}
+
+function spawnCustomer() {
+    if (entities.customers.length < 3) {
+        // Spawn at bottom edge
+        entities.customers.push({
+            x: Math.random() * CANVAS.width,
+            y: CANVAS.height + 50,
+            target: null,
+            state: 'walking_in', // walking_in, eating, leaving
+            timer: 0,
+            hasPaid: false
+        });
+    }
+}
+
+function update(dt) {
+    // 1. Player Movement
+    const dx = player.targetX - player.x;
+    const dy = player.targetY - player.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    
+    if (dist > 5) {
+        player.x += (dx / dist) * player.speed * dt;
+        player.y += (dy / dist) * player.speed * dt;
+    }
+
+    // 2. Bear Interaction (Gathering)
+    entities.bears.forEach(bear => {
+        if (!bear.alive) return;
+        const d = Math.hypot(player.x - bear.x, player.y - bear.y);
+        if (d < 40 && player.stack.length < MAX_CARRY) {
+            bear.alive = false;
+            // Add 'raw' meat to stack
+            player.stack.push('raw');
+            spawnParticle(bear.x, bear.y, SPRITES.meat_raw);
         }
-      }, []);
+    });
+    // Cleanup bears and spawn new ones
+    entities.bears = entities.bears.filter(b => b.alive);
+    if (Math.random() < 0.02) spawnBear();
 
-      const saveGame = useCallback(() => {
-        const data = { coins, unlockedLevels, achievements, inventory, selectedSkin };
-        localStorage.setItem('sneakyScholarSave', JSON.stringify(data));
-      }, [coins, unlockedLevels, achievements, inventory, selectedSkin]);
-
-      useEffect(() => { saveGame(); }, [saveGame]);
-
-      const unlockAchievement = (achievementId) => {
-        if (!achievements.includes(achievementId)) {
-          const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
-          setAchievements(prev => [...prev, achievementId]);
-          setCoins(c => c + (achievement?.reward || 0));
-          AudioManager.playLevelUp();
-          return achievement;
-        }
-        return null;
-      };
-
-      const handleLevelComplete = (time, caughtCount) => {
-        const currentLevel = LEVELS.find(l => l.id === level);
-        const reward = currentLevel.reward;
-        const bonusCoins = caughtCount === 0 ? 50 : 0;
-
-        setCoins(c => c + reward + bonusCoins);
-        AudioManager.playSuccess();
-
-        if (level < LEVELS.length && !unlockedLevels.includes(level + 1)) {
-          setUnlockedLevels(prev => [...prev, level + 1]);
+    // 3. Machine Interaction (Cooking)
+    entities.machines.forEach(machine => {
+        // Check collision
+        if (checkRectCollision(player, machine)) {
+            // Drop off Raw Meat
+            if (player.stack.length > 0 && player.stack[player.stack.length-1] === 'raw') {
+                player.stack.pop();
+                machine.input++;
+            }
+            // Pick up Cooked Meat
+            if (machine.output > 0 && player.stack.length < MAX_CARRY) {
+                machine.output--;
+                player.stack.push('cooked');
+                spawnParticle(machine.x, machine.y, SPRITES.meat_cooked);
+            }
         }
 
-        if (achievements.length === 0) unlockAchievement('first_win');
-        if (time < 5) unlockAchievement('quick_draw');
-        if (caughtCount === 0) unlockAchievement('perfect');
-        if (level === 5) unlockAchievement('level_5');
-        if (level === 10) unlockAchievement('level_10');
+        // Processing Logic
+        if (machine.input > 0 && machine.output < machine.maxOutput) {
+            machine.timer += dt * 1000;
+            if (machine.timer > machine.cookingTime) {
+                machine.input--;
+                machine.output++;
+                machine.timer = 0;
+            }
+        }
+    });
 
-        const newConsecutive = consecutiveWins + 1;
-        setConsecutiveWins(newConsecutive);
-        if (newConsecutive >= 5) unlockAchievement('speed_demon');
+    // 4. Table Interaction (Serving)
+    entities.tables.forEach(table => {
+        if (checkRectCollision(player, table)) {
+            // Drop off Cooked Meat
+            if (table.food < table.maxFood && player.stack.length > 0 && player.stack[player.stack.length-1] === 'cooked') {
+                player.stack.pop();
+                table.food++;
+            }
+        }
+    });
 
-        if (coins + reward + bonusCoins >= 500) unlockAchievement('coin_collector');
-      };
+    // 5. Customer Logic
+    entities.customers.forEach(cust => {
+        const table = entities.tables[0]; // Simple AI: go to first table
 
-      const handleLevelFail = () => {
-        AudioManager.playFail();
-        setConsecutiveWins(0);
-      };
-
-      if (screen === 'menu') {
-        return (
-          <MenuScreen
-            onStart={() => setScreen('game')}
-            onLevelSelect={() => setScreen('levelSelect')}
-            onShop={() => setScreen('shop')}
-            onAchievements={() => setScreen('achievements')}
-            coins={coins}
-          />
-        );
-      }
-
-      if (screen === 'levelSelect') {
-        return (
-          <LevelSelectScreen
-            levels={LEVELS}
-            unlockedLevels={unlockedLevels}
-            onSelectLevel={(lvl) => { setLevel(lvl); setScreen('game'); }}
-            onBack={() => setScreen('menu')}
-          />
-        );
-      }
-
-      if (screen === 'shop') {
-        return (
-          <ShopScreen
-            coins={coins}
-            inventory={inventory}
-            selectedSkin={selectedSkin}
-            onPurchase={(item) => { setCoins(c => c - item.cost); setInventory(prev => [...prev, item.id]); AudioManager.playCoin(); }}
-            onSelectSkin={(skin) => setSelectedSkin(skin)}
-            onBack={() => setScreen('menu')}
-          />
-        );
-      }
-
-      if (screen === 'achievements') {
-        return (
-          <AchievementsScreen
-            achievements={achievements}
-            allAchievements={ACHIEVEMENTS}
-            onBack={() => setScreen('menu')}
-          />
-        );
-      }
-
-      if (screen === 'game') {
-        return (
-          <GameScreen
-            level={LEVELS.find(l => l.id === level)}
-            skin={selectedSkin}
-            onWin={(time, caughtCount) => { handleLevelComplete(time, caughtCount); setScreen('levelSelect'); }}
-            onLose={() => { handleLevelFail(); setScreen('levelSelect'); }}
-            onQuit={() => setScreen('menu')}
-          />
-        );
-      }
-
-      return null;
-    }
-
-    // Menu Screen Component
-    function MenuScreen({ onStart, onLevelSelect, onShop, onAchievements, coins }) {
-      return (
-        <div style={{
-          width: '100%',
-          height: '100%',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
-          <div style={{ position: 'absolute', top: '10%', left: '10%', fontSize: '60px', opacity: 0.2, animation: 'float 3s ease-in-out infinite' }}>📚</div>
-          <div style={{ position: 'absolute', top: '60%', right: '15%', fontSize: '50px', opacity: 0.2, animation: 'float 4s ease-in-out infinite' }}>✏️</div>
-
-          <div style={{ textAlign: 'center', animation: 'slideIn 0.5s ease-out' }}>
-            <h1 style={{
-              fontFamily: "'Press Start 2P', cursive",
-              fontSize: 'clamp(24px, 6vw, 48px)',
-              color: '#fff',
-              textShadow: '4px 4px 0 rgba(0,0,0,0.3)',
-              marginBottom: '10px',
-              lineHeight: 1.4
-            }}>SNEAKY<br/>SCHOLAR</h1>
-
-            <div style={{ fontSize: '60px', marginBottom: '20px', animation: 'pulse 2s ease-in-out infinite' }}>👃✋</div>
-
-            <p style={{ color: 'white', fontSize: '18px', marginBottom: '30px', opacity: 0.9 }}>
-              The Ultimate Nose-Picking Adventure
-            </p>
-
-            <div style={{
-              background: 'rgba(255,255,255,0.2)',
-              borderRadius: '20px',
-              padding: '15px 30px',
-              marginBottom: '30px',
-              backdropFilter: 'blur(10px)'
-            }}>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#FFD700' }}>💰 {coins} Coins</div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center' }}>
-              <MenuButton onClick={onStart} primary>🎮 QUICK PLAY</MenuButton>
-              <MenuButton onClick={onLevelSelect}>📊 LEVEL SELECT</MenuButton>
-              <MenuButton onClick={onShop}>🛒 SHOP</MenuButton>
-              <MenuButton onClick={onAchievements}>🏆 ACHIEVEMENTS</MenuButton>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    function MenuButton({ children, onClick, primary }) {
-      return (
-        <button
-          onClick={() => { AudioManager.playClick(); onClick(); }}
-          style={{
-            background: primary ? 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' : 'rgba(255,255,255,0.9)',
-            color: primary ? 'white' : '#764ba2',
-            border: 'none',
-            borderRadius: '15px',
-            padding: '18px 40px',
-            fontSize: '18px',
-            fontWeight: 'bold',
-            fontFamily: 'Fredoka',
-            cursor: 'pointer',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.2)',
-            transition: 'all 0.3s',
-            minWidth: '250px',
-            textAlign: 'center'
-          }}
-          onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
-          onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-          onTouchStart={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
-          onTouchEnd={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-        >
-          {children}
-        </button>
-      );
-    }
-
-    // Level Select Screen
-    function LevelSelectScreen({ levels, unlockedLevels, onSelectLevel, onBack }) {
-      return (
-        <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', overflowY: 'auto', padding: '20px' }}>
-          <button
-            onClick={() => { AudioManager.playClick(); onBack(); }}
-            style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '10px', padding: '10px 20px', fontSize: '16px', fontWeight: 'bold', marginBottom: '20px', cursor: 'pointer' }}
-          >
-            ← Back
-          </button>
-
-          <h2 style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '24px', color: 'white', textAlign: 'center', marginBottom: '30px', textShadow: '3px 3px 0 rgba(0,0,0,0.3)' }}>
-            SELECT LEVEL
-          </h2>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px', maxWidth: '800px', margin: '0 auto' }}>
-            {levels.map(lvl => {
-              const unlocked = unlockedLevels.includes(lvl.id);
-              return (
-                <div
-                  key={lvl.id}
-                  onClick={() => { if (unlocked) { AudioManager.playClick(); onSelectLevel(lvl.id); } }}
-                  style={{
-                    background: unlocked ? 'white' : 'rgba(255,255,255,0.3)',
-                    borderRadius: '15px',
-                    padding: '20px',
-                    textAlign: 'center',
-                    cursor: unlocked ? 'pointer' : 'not-allowed',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-                    opacity: unlocked ? 1 : 0.6,
-                    position: 'relative',
-                    overflow: 'hidden'
-                  }}
-                >
-                  {!unlocked && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '40px' }}>🔒</div>}
-                  <div style={{ fontSize: '36px', marginBottom: '10px', filter: unlocked ? 'none' : 'blur(3px)' }}>{lvl.id}</div>
-                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#764ba2', marginBottom: '10px', filter: unlocked ? 'none' : 'blur(3px)' }}>{lvl.name}</div>
-                  <div style={{ fontSize: '12px', color: '#999', filter: unlocked ? 'none' : 'blur(3px)' }}>💰 {lvl.reward} coins</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    // Shop Screen
-    function ShopScreen({ coins, inventory, selectedSkin, onPurchase, onSelectSkin, onBack }) {
-      return (
-        <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', overflowY: 'auto', padding: '20px' }}>
-          <button
-            onClick={() => { AudioManager.playClick(); onBack(); }}
-            style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '10px', padding: '10px 20px', fontSize: '16px', fontWeight: 'bold', marginBottom: '20px', cursor: 'pointer' }}
-          >
-            ← Back
-          </button>
-
-          <div style={{ background: 'rgba(255,255,255,0.9)', borderRadius: '15px', padding: '15px', marginBottom: '20px', textAlign: 'center' }}>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#FFD700' }}>💰 {coins} Coins</div>
-          </div>
-
-          <h2 style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '20px', color: 'white', textAlign: 'center', marginBottom: '30px', textShadow: '3px 3px 0 rgba(0,0,0,0.3)' }}>
-            🛒 SHOP
-          </h2>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '15px', maxWidth: '800px', margin: '0 auto' }}>
-            {SHOP_ITEMS.map(item => {
-              const owned = inventory.includes(item.id);
-              const canAfford = coins >= item.cost;
-              const isSelected = selectedSkin === item.id;
-              const clickable = (!owned && canAfford) || (owned && item.type === 'skin');
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => {
-                    if (!clickable) return;
-                    if (!owned && canAfford) onPurchase(item);
-                    else if (owned && item.type === 'skin') { AudioManager.playClick(); onSelectSkin(item.id); }
-                  }}
-                  style={{
-                    background: owned ? (isSelected ? '#90EE90' : 'white') : 'rgba(255,255,255,0.7)',
-                    borderRadius: '15px',
-                    padding: '20px',
-                    textAlign: 'center',
-                    cursor: clickable ? 'pointer' : 'not-allowed',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-                    border: isSelected ? '3px solid #32CD32' : 'none'
-                  }}
-                >
-                  <div style={{ fontSize: '40px', marginBottom: '10px' }}>{item.type === 'skin' ? '✋' : '⚡'}</div>
-                  <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px', color: '#333' }}>{item.name}</div>
-                  {owned ? (
-                    <div style={{ fontSize: '12px', color: '#32CD32', fontWeight: 'bold' }}>{isSelected ? 'EQUIPPED' : 'OWNED'}</div>
-                  ) : (
-                    <div style={{ fontSize: '14px', color: canAfford ? '#FFD700' : '#999', fontWeight: 'bold' }}>💰 {item.cost}</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    // Achievements Screen
-    function AchievementsScreen({ achievements, allAchievements, onBack }) {
-      return (
-        <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)', overflowY: 'auto', padding: '20px' }}>
-          <button
-            onClick={() => { AudioManager.playClick(); onBack(); }}
-            style={{ background: 'rgba(255,255,255,0.9)', border: 'none', borderRadius: '10px', padding: '10px 20px', fontSize: '16px', fontWeight: 'bold', marginBottom: '20px', cursor: 'pointer' }}
-          >
-            ← Back
-          </button>
-
-          <h2 style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '20px', color: '#333', textAlign: 'center', marginBottom: '10px', textShadow: '2px 2px 0 rgba(255,255,255,0.5)' }}>
-            🏆 ACHIEVEMENTS
-          </h2>
-
-          <div style={{ textAlign: 'center', marginBottom: '30px', fontSize: '18px', fontWeight: 'bold', color: '#666' }}>
-            {achievements.length} / {allAchievements.length} Unlocked
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', maxWidth: '600px', margin: '0 auto' }}>
-            {allAchievements.map(a => {
-              const unlocked = achievements.includes(a.id);
-              return (
-                <div
-                  key={a.id}
-                  style={{
-                    background: unlocked ? 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' : 'rgba(255,255,255,0.5)',
-                    borderRadius: '15px',
-                    padding: '20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '15px',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-                    opacity: unlocked ? 1 : 0.6
-                  }}
-                >
-                  <div style={{ fontSize: '50px', filter: unlocked ? 'none' : 'grayscale(100%)' }}>🏆</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#333', marginBottom: '5px' }}>{a.name}</div>
-                    <div style={{ fontSize: '14px', color: '#666', marginBottom: '5px' }}>{a.desc}</div>
-                    <div style={{ fontSize: '12px', color: '#FFD700', fontWeight: 'bold' }}>💰 +{a.reward} coins</div>
-                  </div>
-                  {unlocked && <div style={{ fontSize: '30px' }}>✓</div>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    // Game Screen Component - REDESIGNED WITH PROPER PERSPECTIVE
-    function GameScreen({ level, skin, onWin, onLose, onQuit }) {
-      const [fingerY, setFingerY] = useState(95); // Start at bottom (lap)
-      const [teacherWatching, setTeacherWatching] = useState(false);
-      const [caughtCount, setCaughtCount] = useState(0);
-      const [gameTime, setGameTime] = useState(0);
-      const [isMoving, setIsMoving] = useState(false);
-      const [gameOver, setGameOver] = useState(false);
-      const [won, setWon] = useState(false);
-      const [particles, setParticles] = useState([]);
-      const [justCaught, setJustCaught] = useState(false);
-      const [isTurning, setIsTurning] = useState(false);
-
-      const noseY = 35; // Nose position in top third of screen
-      const maxCatches = level.catches;
-      const timerRef = useRef(null);
-      const teacherTimerRef = useRef(null);
-      const gameOverRef = useRef(false);
-      const movingRef = useRef(false);
-
-      useEffect(() => {
-        movingRef.current = isMoving;
-      }, [isMoving]);
-
-      useEffect(() => {
-        timerRef.current = setInterval(() => setGameTime(t => t + 0.1), 100);
-        scheduleTeacherLook();
-        return () => { 
-          clearInterval(timerRef.current); 
-          clearTimeout(teacherTimerRef.current); 
-        };
-      }, []);
-
-      const scheduleTeacherLook = () => {
-        const baseDelay = 2000 / level.difficulty;
-        const lookDelay = Math.random() * baseDelay + 1000;
-
-        teacherTimerRef.current = setTimeout(() => {
-          if (gameOverRef.current) return;
-          
-          setIsTurning(true);
-          
-          setTimeout(() => {
-            setTeacherWatching(true);
-            setIsTurning(false);
-            
-            if (movingRef.current) {
-              console.log('CAUGHT! Player was moving');
-              setCaughtCount(prev => {
-                const newCount = prev + 1;
-                console.log('New caught count:', newCount, 'Max:', maxCatches);
-                
-                setJustCaught(true);
-                setTimeout(() => setJustCaught(false), 500);
-                AudioManager.playFail();
-                
-                if (newCount >= maxCatches) {
-                  console.log('Game Over - too many catches');
-                  setTimeout(() => endGame(false), 800);
+        if (cust.state === 'walking_in') {
+            moveTo(cust, table.x, table.y + 40, 100, dt);
+            if (Math.hypot(cust.x - table.x, cust.y - (table.y+40)) < 5) {
+                if (table.food > 0) {
+                    table.food--;
+                    cust.state = 'eating';
+                    cust.timer = 2000; // Eat for 2 seconds
+                } else {
+                    // Wait or leave if too long (simple: just wait)
                 }
-                return newCount;
-              });
             }
-          }, 300);
-
-          const watchDuration = Math.random() * 1500 + 800;
-          setTimeout(() => {
-            if (!gameOverRef.current) {
-              setTeacherWatching(false);
-              scheduleTeacherLook();
+        } else if (cust.state === 'eating') {
+            cust.timer -= dt * 1000;
+            if (cust.timer <= 0) {
+                cust.state = 'leaving';
+                // Pay Money
+                money += 15;
+                spawnParticle(cust.x, cust.y, SPRITES.money);
             }
-          }, watchDuration + 300);
-        }, lookDelay);
-      };
+        } else if (cust.state === 'leaving') {
+            moveTo(cust, CANVAS.width / 2, CANVAS.height + 100, 100, dt);
+            if (cust.y > CANVAS.height + 50) cust.hasPaid = true; // Mark for deletion
+        }
+    });
+    // Cleanup customers
+    entities.customers = entities.customers.filter(c => !c.hasPaid);
+    if (Math.random() < 0.01) spawnCustomer();
 
-      const endGame = (victory) => {
-        if (gameOverRef.current) return;
-        console.log('End game called, victory:', victory);
-        gameOverRef.current = true;
-        setGameOver(true);
-        setWon(victory);
-        clearInterval(timerRef.current);
-        clearTimeout(teacherTimerRef.current);
-
-        setTimeout(() => {
-          if (victory) onWin(Math.round(gameTime * 10) / 10, caughtCount);
-          else onLose();
-        }, 2000);
-      };
-
-      useEffect(() => {
-        if (isMoving && !teacherWatching && !isTurning && !gameOver) {
-          const speed = 0.6;
-          setFingerY(y => {
-            const next = y - speed; // Move UP
-            if (next <= noseY) { 
-              endGame(true); 
-              return noseY; 
+    // 6. Triggers (Upgrades)
+    entities.triggers.forEach(trig => {
+        if (!trig.unlocked && checkRectCollision(player, trig)) {
+            if (money >= trig.cost) {
+                money -= trig.cost;
+                trig.unlocked = true;
+                unlockLevel++;
+                player.speed += 50; // Speed upgrade
+                trig.label = "Unlocked!";
             }
-            return next;
-          });
         }
-      }, [isMoving, teacherWatching, isTurning, gameOver]);
+    });
 
-      useEffect(() => {
-        if (won) {
-          const newParticles = Array.from({ length: 20 }).map((_, i) => ({
-            id: Math.random(),
-            x: 45 + Math.random() * 10,
-            y: 30,
-            delay: i * 0.1
-          }));
-          setParticles(newParticles);
+    // 7. Particles
+    entities.particles.forEach(p => {
+        p.y -= 50 * dt;
+        p.life -= dt;
+    });
+    entities.particles = entities.particles.filter(p => p.life > 0);
+
+    // Update UI
+    UI_MONEY.innerText = money;
+    UI_MEAT.innerText = `${player.stack.length}/${MAX_CARRY}`;
+}
+
+// --- RENDER ---
+
+function draw() {
+    // Clear
+    CTX.fillStyle = '#e0f7fa';
+    CTX.fillRect(0, 0, CANVAS.width, CANVAS.height);
+
+    // Decor: Snow
+    CTX.font = "20px Arial";
+    CTX.fillStyle = "#fff";
+    // (Static snow for performance in this simple example)
+    CTX.globalAlpha = 0.5;
+    CTX.fillText(SPRITES.snow, 100, 100);
+    CTX.fillText(SPRITES.snow, CANVAS.width-100, 200);
+    CTX.fillText(SPRITES.snow, CANVAS.width/2, CANVAS.height/2);
+    CTX.globalAlpha = 1.0;
+
+    // Triggers
+    entities.triggers.forEach(t => {
+        if (t.unlocked) return;
+        CTX.fillStyle = 'rgba(0,0,0,0.2)';
+        CTX.fillRect(t.x - t.w/2, t.y - t.h/2, t.w, t.h);
+        CTX.fillStyle = '#333';
+        CTX.font = "16px Arial";
+        CTX.textAlign = "center";
+        CTX.fillText(`🔒 ${t.cost}`, t.x, t.y + 5);
+        CTX.font = "12px Arial";
+        CTX.fillText(t.label, t.x, t.y + 20);
+    });
+
+    // Machines (Grills)
+    entities.machines.forEach(m => {
+        // Base
+        CTX.fillStyle = '#555';
+        CTX.fillRect(m.x - m.w/2, m.y - m.h/2, m.w, m.h);
+        
+        // Progress Bar
+        if (m.input > 0) {
+            CTX.fillStyle = '#eee';
+            CTX.fillRect(m.x - m.w/2, m.y - m.h/2 - 10, m.w, 5);
+            CTX.fillStyle = 'orange';
+            CTX.fillRect(m.x - m.w/2, m.y - m.h/2 - 10, m.w * (m.timer / m.cookingTime), 5);
         }
-      }, [won]);
 
-      const getSkinColor = () => {
-        switch (skin) {
-          case 'rainbow_finger':
-            return 'linear-gradient(180deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3)';
-          case 'golden_finger':
-            return 'linear-gradient(180deg, #FFD700, #FFA500)';
-          case 'ninja_finger':
-            return 'linear-gradient(180deg, #2c3e50, #34495e)';
-          default:
-            return '#ffdbac';
+        // Emoji
+        CTX.font = "30px Arial";
+        CTX.textAlign = "center";
+        CTX.textBaseline = "middle";
+        CTX.fillText(SPRITES.grill, m.x, m.y);
+
+        // Output Stack Visual
+        for(let i=0; i<m.output; i++) {
+            CTX.font = "20px Arial";
+            CTX.fillText(SPRITES.meat_cooked, m.x, m.y - 30 - (i*10));
         }
-      };
+    });
 
-      return (
-        <div
-          style={{ 
-            width: '100%', 
-            height: '100%', 
-            background: 'linear-gradient(180deg, #87CEEB 0%, #98D8C8 30%, #8FBC8F 100%)',
-            position: 'relative', 
-            touchAction: 'none', 
-            userSelect: 'none',
-            overflow: 'hidden'
-          }}
-          onMouseDown={() => !gameOver && setIsMoving(true)}
-          onMouseUp={() => setIsMoving(false)}
-          onTouchStart={() => !gameOver && setIsMoving(true)}
-          onTouchEnd={() => setIsMoving(false)}
-        >
-          {/* Classroom background - top third */}
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '30%',
-            background: 'linear-gradient(180deg, #9FE2BF 0%, #7FB89F 100%)',
-            borderBottom: '4px solid #5A8F7B'
-          }}>
-            {/* Chalkboard */}
-            <div style={{
-              position: 'absolute',
-              top: '10%',
-              left: '10%',
-              width: '35%',
-              height: '70%',
-              background: '#2F4F4F',
-              border: '6px solid #8B4513',
-              borderRadius: '8px'
-            }}>
-              <div style={{
-                position: 'absolute',
-                top: '10px',
-                left: '10px',
-                color: 'white',
-                fontSize: '14px',
-                fontFamily: "'Press Start 2P', cursive",
-                opacity: 0.7
-              }}>
-                {level.name}
-              </div>
-            </div>
+    // Tables
+    entities.tables.forEach(t => {
+        CTX.fillStyle = '#8B4513';
+        CTX.fillRect(t.x - t.w/2, t.y - t.h/2, t.w, t.h);
+        CTX.textAlign = "center";
+        CTX.font = "30px Arial";
+        CTX.fillText(SPRITES.table, t.x, t.y + 5);
 
-            {/* Teacher in background */}
-            <div style={{ 
-              position: 'absolute', 
-              top: '50%',
-              right: '15%',
-              transform: `translateY(-50%) scale(0.5) ${teacherWatching ? 'rotateY(0deg)' : 'rotateY(180deg)'}`,
-              transition: 'transform 0.3s ease-out',
-              transformStyle: 'preserve-3d'
-            }}>
-              {/* Teacher pixel art style */}
-              <div style={{ 
-                width: '80px', 
-                height: '100px', 
-                position: 'relative'
-              }}>
-                {/* Head */}
-                <div style={{ 
-                  width: '60px', 
-                  height: '60px', 
-                  background: '#e8d4b8', 
-                  border: '3px solid #000',
-                  position: 'absolute',
-                  left: '10px',
-                  top: 0,
-                  imageRendering: 'pixelated'
-                }}>
-                  {/* Glasses */}
-                  <div style={{ position: 'absolute', top: '20px', left: '8px', display: 'flex', gap: '12px' }}>
-                    <div style={{ width: '14px', height: '14px', border: '3px solid #000', background: 'rgba(255,255,255,0.3)' }} />
-                    <div style={{ width: '14px', height: '14px', border: '3px solid #000', background: 'rgba(255,255,255,0.3)' }} />
-                  </div>
-                  {/* Eyes when watching */}
-                  {teacherWatching && (
-                    <>
-                      <div style={{ position: 'absolute', width: '8px', height: '8px', background: 'black', left: '16px', top: '26px', imageRendering: 'pixelated' }} />
-                      <div style={{ position: 'absolute', width: '8px', height: '8px', background: 'black', right: '16px', top: '26px', imageRendering: 'pixelated' }} />
-                    </>
-                  )}
-                  {/* Mustache */}
-                  <div style={{ position: 'absolute', width: '24px', height: '8px', background: '#333', bottom: '12px', left: '50%', transform: 'translateX(-50%)', imageRendering: 'pixelated' }} />
-                </div>
-                {/* Body */}
-                <div style={{ 
-                  width: '60px', 
-                  height: '45px', 
-                  background: '#2c3e50', 
-                  border: '3px solid #000',
-                  position: 'absolute',
-                  left: '10px',
-                  bottom: 0,
-                  imageRendering: 'pixelated'
-                }} />
-              </div>
-            </div>
+        // Food on table
+        for(let i=0; i<t.food; i++) {
+            CTX.font = "15px Arial";
+            // Scatter slightly
+            CTX.fillText(SPRITES.meat_cooked, t.x + (i*5) - 10, t.y - 10);
+        }
+    });
 
-            {/* Window */}
-            <div style={{
-              position: 'absolute',
-              top: '15%',
-              right: '5%',
-              width: '80px',
-              height: '60px',
-              background: '#87CEEB',
-              border: '4px solid #654321',
-              borderRadius: '4px'
-            }}>
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: 0,
-                right: 0,
-                height: '4px',
-                background: '#654321'
-              }} />
-              <div style={{
-                position: 'absolute',
-                left: '50%',
-                top: 0,
-                bottom: 0,
-                width: '4px',
-                background: '#654321'
-              }} />
-            </div>
-          </div>
+    // Bears
+    entities.bears.forEach(b => {
+        CTX.font = "30px Arial";
+        CTX.textAlign = "center";
+        CTX.textBaseline = "middle";
+        CTX.fillText(SPRITES.bear, b.x, b.y);
+        // Shadow
+        CTX.fillStyle = "rgba(0,0,0,0.1)";
+        CTX.beginPath();
+        CTX.ellipse(b.x, b.y + 15, 15, 5, 0, 0, Math.PI*2);
+        CTX.fill();
+    });
 
-          {/* Status Bar */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white', fontWeight: 'bold', zIndex: 100 }}>
-            <button
-              onClick={() => { AudioManager.playClick(); onQuit(); }}
-              style={{ background: 'rgba(255,255,255,0.3)', border: 'none', borderRadius: '8px', padding: '8px 15px', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              ❌
-            </button>
-            <div style={{ display: 'flex', gap: '15px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: '8px', padding: '8px 15px' }}>⏱️ {gameTime.toFixed(1)}s</div>
-              <div style={{ 
-                background: caughtCount >= maxCatches - 1 ? 'rgba(255,0,0,0.8)' : 'rgba(255,255,255,0.2)', 
-                borderRadius: '8px', 
-                padding: '8px 15px',
-                animation: justCaught ? 'shake 0.5s' : 'none'
-              }}>
-                ❌ {caughtCount}/{maxCatches}
-              </div>
-            </div>
-          </div>
+    // Customers
+    entities.customers.forEach(c => {
+        CTX.font = "30px Arial";
+        CTX.textAlign = "center";
+        CTX.textBaseline = "middle";
+        CTX.fillText(SPRITES.customer, c.x, c.y);
+        if (c.state === 'eating') {
+            CTX.font = "20px Arial";
+            CTX.fillText("😋", c.x + 15, c.y - 15);
+        }
+    });
 
-          {/* Warning */}
-          {(teacherWatching || isTurning) && !gameOver && (
-            <div style={{ 
-              position: 'absolute', 
-              top: '35%', 
-              left: '50%', 
-              transform: 'translateX(-50%)', 
-              background: 'rgba(255,0,0,0.95)', 
-              color: 'white', 
-              padding: '20px 40px', 
-              borderRadius: '15px', 
-              fontSize: '20px', 
-              fontWeight: 'bold', 
-              animation: teacherWatching ? 'pulse 0.5s ease-in-out infinite' : 'none', 
-              zIndex: 90, 
-              textAlign: 'center',
-              border: '4px solid #fff',
-              boxShadow: '0 8px 20px rgba(0,0,0,0.5)'
-            }}>
-              {isTurning ? '⚠️ TURNING!' : '👀 WATCHING!'}
-              <br/>STOP!
-            </div>
-          )}
+    // Player
+    CTX.font = "40px Arial";
+    CTX.textAlign = "center";
+    CTX.textBaseline = "middle";
+    CTX.fillText(SPRITES.player, player.x, player.y);
+    
+    // Player Stack (The Tower!)
+    player.stack.forEach((item, index) => {
+        const sprite = item === 'raw' ? SPRITES.meat_raw : SPRITES.meat_cooked;
+        CTX.font = "20px Arial";
+        // Stack flows upward
+        CTX.fillText(sprite, player.x, player.y - 30 - (index * 12));
+    });
 
-          {/* Game Over */}
-          {gameOver && (
-            <div style={{ 
-              position: 'absolute', 
-              top: '50%', 
-              left: '50%', 
-              transform: 'translate(-50%, -50%)', 
-              background: won ? 'rgba(0,255,0,0.95)' : 'rgba(255,0,0,0.95)', 
-              color: 'white', 
-              padding: '40px', 
-              borderRadius: '20px', 
-              fontSize: '32px', 
-              fontWeight: 'bold', 
-              animation: won ? 'slideIn 0.5s ease-out' : 'caughtShake 0.5s ease-out', 
-              zIndex: 110, 
-              textAlign: 'center', 
-              boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-              border: '5px solid #fff'
-            }}>
-              {won ? (
-                <>
-                  🎉 YOU WIN! 🎉<br/>
-                  <div style={{ fontSize: '18px', marginTop: '15px' }}>
-                    Time: {gameTime.toFixed(1)}s<br/>
-                    Reward: 💰 {level.reward} coins
-                    {caughtCount === 0 && <><br/>Perfect! +50 bonus!</>}
-                  </div>
-                </>
-              ) : (
-                <>
-                  😱 BUSTED! 😱<br/>
-                  <div style={{ fontSize: '18px', marginTop: '15px' }}>
-                    Caught {caughtCount} times!<br/>
-                    Try again!
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+    // Particles
+    entities.particles.forEach(p => {
+        CTX.font = "20px Arial";
+        CTX.fillText(p.char, p.x, p.y);
+    });
+}
 
-          {/* Coin particles */}
-          {particles.map(p => (
-            <div key={p.id} style={{ position: 'absolute', left: `${p.x}%`, top: `${p.y}%`, fontSize: '30px', animation: `coinCollect 1s ease-out ${p.delay}s forwards`, zIndex: 100 }}>💰</div>
-          ))}
+// --- UTILITIES ---
 
-          {/* YOUR NOSE - center of screen, first person view */}
-          <div style={{
-            position: 'absolute',
-            top: `${noseY}%`,
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10
-          }}>
-            {/* Large nose with nostrils - pixel art style */}
-            <div style={{
-              width: '120px',
-              height: '140px',
-              background: 'linear-gradient(135deg, #ffb380 0%, #ffa060 100%)',
-              border: '4px solid #000',
-              borderRadius: '30px 30px 40px 40px',
-              position: 'relative',
-              boxShadow: 'inset -4px -4px 10px rgba(0,0,0,0.2), 4px 4px 15px rgba(0,0,0,0.3)',
-              imageRendering: 'pixelated'
-            }}>
-              {/* Nostrils - BIG targets */}
-              <div style={{ 
-                position: 'absolute', 
-                width: '28px', 
-                height: '32px', 
-                background: '#000', 
-                borderRadius: '50%', 
-                left: '20px', 
-                bottom: '20px',
-                boxShadow: 'inset 0 4px 8px rgba(0,0,0,0.8)',
-                border: '3px solid #000'
-              }} />
-              <div style={{ 
-                position: 'absolute', 
-                width: '28px', 
-                height: '32px', 
-                background: '#000', 
-                borderRadius: '50%', 
-                right: '20px', 
-                bottom: '20px',
-                boxShadow: 'inset 0 4px 8px rgba(0,0,0,0.8)',
-                border: '3px solid #000'
-              }} />
-              
-              {/* Nose bridge highlight */}
-              <div style={{ 
-                position: 'absolute', 
-                width: '30px', 
-                height: '50px', 
-                background: 'rgba(255,255,255,0.4)', 
-                borderRadius: '50%', 
-                left: '15px', 
-                top: '15px', 
-                filter: 'blur(5px)' 
-              }} />
-            </div>
-          </div>
+function gameLoop(timestamp) {
+    const dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
 
-          {/* YOUR FINGER - coming from bottom */}
-          <div style={{
-            position: 'absolute',
-            top: `${fingerY}%`,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            transition: 'top 0.1s linear',
-            zIndex: 20
-          }}>
-            {/* Hand with pointing finger - pixel art */}
-            <div style={{
-              width: '80px',
-              height: '120px',
-              position: 'relative'
-            }}>
-              {/* Index finger pointing UP */}
-              <div style={{
-                position: 'absolute',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                bottom: '50px'
-              }}>
-                <div style={{
-                  width: '28px',
-                  height: '80px',
-                  background: getSkinColor(),
-                  border: '4px solid #000',
-                  borderRadius: '14px 14px 0 0',
-                  position: 'relative',
-                  boxShadow: '2px 0 8px rgba(0,0,0,0.3)',
-                  imageRendering: 'pixelated'
-                }}>
-                  {/* Fingertip */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '-8px',
-                    left: '-4px',
-                    width: '36px',
-                    height: '36px',
-                    background: getSkinColor(),
-                    borderRadius: '50%',
-                    border: '4px solid #000',
-                    boxShadow: 'inset -2px -2px 6px rgba(0,0,0,0.2)'
-                  }}>
-                    {/* Fingernail */}
-                    <div style={{
-                      position: 'absolute',
-                      top: '6px',
-                      left: '6px',
-                      width: '18px',
-                      height: '14px',
-                      background: 'rgba(255,255,255,0.9)',
-                      borderRadius: '50%',
-                      border: '2px solid #000'
-                    }} />
-                  </div>
-                </div>
-              </div>
+    update(dt);
+    draw();
 
-              {/* Palm */}
-              <div style={{
-                position: 'absolute',
-                bottom: 0,
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: '80px',
-                height: '70px',
-                background: getSkinColor(),
-                border: '4px solid #000',
-                borderRadius: '40px 40px 20px 20px',
-                boxShadow: '2px 2px 10px rgba(0,0,0,0.3)',
-                imageRendering: 'pixelated'
-              }}>
-                {/* Thumb */}
-                <div style={{
-                  position: 'absolute',
-                  left: '-10px',
-                  top: '10px',
-                  width: '26px',
-                  height: '40px',
-                  background: getSkinColor(),
-                  border: '4px solid #000',
-                  borderRadius: '50% 20% 40% 50%',
-                  transform: 'rotate(-25deg)'
-                }} />
-                
-                {/* Other curled fingers */}
-                <div style={{ position: 'absolute', bottom: '5px', right: '8px', display: 'flex', gap: '4px' }}>
-                  {[0, 1, 2].map(i => (
-                    <div key={i} style={{ 
-                      width: '14px', 
-                      height: '22px', 
-                      background: getSkinColor(), 
-                      border: '3px solid #000',
-                      borderRadius: '50% 50% 0 0',
-                      borderBottom: 'none'
-                    }} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+    requestAnimationFrame(gameLoop);
+}
 
-          {/* Progress bar */}
-          <div style={{ 
-            position: 'absolute', 
-            bottom: '30px', 
-            left: '50%', 
-            transform: 'translateX(-50%)',
-            width: '80%',
-            maxWidth: '400px',
-            height: '30px', 
-            background: 'rgba(0,0,0,0.3)', 
-            borderRadius: '15px', 
-            overflow: 'hidden',
-            border: '3px solid #000',
-            zIndex: 80
-          }}>
-            <div style={{ 
-              height: '100%', 
-              width: `${((95 - fingerY) / (95 - noseY)) * 100}%`, 
-              background: caughtCount >= maxCatches - 1 ? 'linear-gradient(90deg, #ff0000, #ff6b6b)' : 'linear-gradient(90deg, #00ff00, #ffff00)', 
-              transition: 'width 0.1s',
-              boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '14px',
-              fontWeight: 'bold',
-              color: '#fff',
-              textShadow: '1px 1px 2px #000'
-            }}>
-              {Math.round(((95 - fingerY) / (95 - noseY)) * 100)}%
-            </div>
-          </div>
+function checkRectCollision(circle, rect) {
+    // Simple AABB approximation for gameplay feel
+    return (circle.x > rect.x - rect.w/2 - 20 &&
+            circle.x < rect.x + rect.w/2 + 20 &&
+            circle.y > rect.y - rect.h/2 - 20 &&
+            circle.y < rect.y + rect.h/2 + 20);
+}
 
-          {/* Instructions */}
-          {!gameOver && (
-            <div style={{ 
-              position: 'absolute', 
-              bottom: '70px', 
-              left: '50%', 
-              transform: 'translateX(-50%)', 
-              color: 'white', 
-              fontSize: '18px', 
-              fontWeight: 'bold', 
-              textAlign: 'center', 
-              textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-              background: 'rgba(0,0,0,0.5)',
-              padding: '10px 20px',
-              borderRadius: '10px',
-              zIndex: 80
-            }}>
-              {isMoving ? '🏃 Moving finger up...' : '👆 Tap & Hold to Pick Nose'}
-            </div>
-          )}
-        </div>
-      );
+function moveTo(entity, tx, ty, speed, dt) {
+    const dx = tx - entity.x;
+    const dy = ty - entity.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1) {
+        entity.x += (dx / dist) * speed * dt;
+        entity.y += (dy / dist) * speed * dt;
     }
+}
 
-    // Render the app
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<Game />);
-  </script>
+function spawnParticle(x, y, char) {
+    entities.particles.push({x, y, char, life: 1.0});
+}
 
+// Start
+init();
+
+</script>
 </body>
 </html>
