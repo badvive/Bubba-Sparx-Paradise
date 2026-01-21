@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Winter Factory Tycoon</title>
+    <title>Winter Defense Tycoon</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         #game-container { position: relative; width: 100vw; height: 100vh; background: #dff6f5; overflow: hidden; }
@@ -12,8 +12,15 @@
         .stat-pill { background: rgba(255, 255, 255, 0.95); color: #2c3e50; padding: 8px 16px; border-radius: 30px; font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); border: 2px solid #ecf0f1; width: fit-content; }
         #money-pill { color: #27ae60; border-color: #2ecc71; }
         #meat-pill { color: #c0392b; border-color: #e74c3c; }
-        #reset-btn { pointer-events: auto; background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; opacity: 0.7; }
-        #reset-btn:hover { opacity: 1; }
+        #wave-pill { color: #8e44ad; border-color: #9b59b6; }
+        #reset-btn { pointer-events: auto; background: #c0392b; color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; margin-top: 10px; font-weight: bold; opacity: 0.8; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        #reset-btn:hover { opacity: 1; transform: scale(1.05); }
+        #notification {
+            position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(192, 57, 43, 0.9); color: white; padding: 15px 30px; border-radius: 50px;
+            font-size: 24px; font-weight: bold; opacity: 0; pointer-events: none; transition: opacity 0.3s;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3); text-align: center; white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -22,45 +29,64 @@
     <div id="ui-layer">
         <div class="stat-pill" id="money-pill"><span class="icon">💵</span> <span id="money-display">0</span></div>
         <div class="stat-pill" id="meat-pill"><span class="icon">🥩</span> <span id="meat-display">0 / 10</span></div>
-        <button id="reset-btn" onclick="resetGame()">RESET PROGRESS</button>
+        <button id="reset-btn" onclick="resetGame()">RESET SAVE</button>
     </div>
+    <div id="notification">BEAR RAID INCOMING!</div>
 </div>
+
 <script>
+/**
+ * WINTER DEFENSE TYCOON
+ * * New Mechanics:
+ * - Bears have HP and aggro
+ * - Turrets (Defense)
+ * - Weapon Upgrades
+ * - Customer Panic
+ */
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const uiMoney = document.getElementById('money-display');
 const uiMeat = document.getElementById('meat-display');
+const notif = document.getElementById('notification');
 
-// --- COLORS & CONFIG ---
+// --- CONFIG ---
 const COLORS = {
-    snow: '#dff6f5', wildSnow: '#d0eef0', bear: '#fdfdfd', bearShadow: '#dbeff0',
+    snow: '#dff6f5', wildSnow: '#d0eef0', 
+    bear: '#fdfdfd', bearAggro: '#ffebee', bearShadow: '#dbeff0',
     playerCoat: '#3498db', playerSkin: '#ffccaa',
-    hunterCoat: '#c0392b', waiterCoat: '#27ae60', // Employee colors
+    hunterCoat: '#c0392b', waiterCoat: '#27ae60',
     customerCoat: '#e67e22', customerHat: '#d35400',
     meatRaw: '#e74c3c', meatCooked: '#8d6e63',
-    belt: '#546e7a', beltMoving: '#37474f',
-    unlockLocked: '#95a5a6', unlockActive: '#2ecc71'
+    turretBase: '#7f8c8d', turretHead: '#95a5a6',
+    bullet: '#3498db',
+    unlockLocked: '#bdc3c7', unlockActive: '#2ecc71', unlockWeapon: '#e74c3c'
 };
 
-// Reduced Speed by ~30%
-const BASE_SPEED = 170; 
-const EMPLOYEE_SPEED = 130;
-const MAX_STACK = 10;
-let wildAreaY = 0; // To be defined in resize
+const SETTINGS = {
+    playerSpeed: 190,
+    bearSpeed: 60,
+    bearChaseSpeed: 110,
+    bearHP: 3,
+    spawnRate: 0.01
+};
 
-// --- GAME STATE (With Save) ---
+let wildAreaY = 0; // Set in resize
+
+// --- GAME STATE ---
 let state = {
     money: 0,
     time: 0,
     upgrades: {
         speed: 0,
-        hunters: 0,
-        waiters: 0
+        waiters: 0,
+        weapon: 0, // 0 = Stick, 1 = Spear
+        turrets: 0 // Count of turrets bought
     }
 };
 
-// Load Save
-const saveString = localStorage.getItem('winterFactorySave');
+// --- SAVE SYSTEM ---
+const saveString = localStorage.getItem('winterDefenseSave_v1');
 if (saveString) {
     try {
         const saved = JSON.parse(saveString);
@@ -70,202 +96,196 @@ if (saveString) {
 }
 
 function saveGame() {
-    localStorage.setItem('winterFactorySave', JSON.stringify({
-        money: state.money,
-        upgrades: state.upgrades
-    }));
+    localStorage.setItem('winterDefenseSave_v1', JSON.stringify({ money: state.money, upgrades: state.upgrades }));
 }
-
 function resetGame() {
-    localStorage.removeItem('winterFactorySave');
+    localStorage.removeItem('winterDefenseSave_v1');
     location.reload();
 }
 
-let player = { x: 0, y: 0, targetX: 0, targetY: 0, moving: false, stack: [], wobble: 0 };
-let entities = [];
+// --- ENTITIES ---
+let player = { 
+    x: 0, y: 0, targetX: 0, targetY: 0, 
+    moving: false, stack: [], 
+    attackCooldown: 0, 
+    hp: 100 // Visual only for now, bears stun you
+};
+
+let entities = []; // Bears, Machines, Customers, Employees, Turrets
+let projectiles = [];
 let particles = [];
 let unlockZones = [];
 
-// --- ASSET DRAWING ---
+// --- DRAWING FUNCTIONS ---
+
 function drawShadow(x, y, r) {
     ctx.fillStyle = 'rgba(0,50,60,0.15)';
-    ctx.beginPath();
-    ctx.ellipse(x, y, r, r/2, 0, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, y, r, r/2, 0, 0, Math.PI*2); ctx.fill();
 }
 
-function drawMeatItem(x, y, type, index, isMoving) {
-    const isRaw = type === 'raw';
-    const c = isRaw ? COLORS.meatRaw : COLORS.meatCooked;
-    const yOff = y - (index * 14);
-    const sway = Math.sin(state.time * 4 + index) * (isMoving ? 2 : 0.5);
-    const xOff = x + sway;
+function drawHealthBar(x, y, hp, maxHp, width) {
+    if (hp >= maxHp) return;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(x - width/2, y - 10, width, 6);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(x - width/2 + 1, y - 9, (width-2) * (hp/maxHp), 4);
+}
+
+function drawWeapon(x, y, type, isMoving, angle) {
+    // Stick or Spear
+    const len = type === 0 ? 25 : 40;
+    const color = type === 0 ? '#8d6e63' : '#95a5a6'; // Wood vs Metal
     
-    ctx.fillStyle = c;
-    ctx.beginPath();
-    ctx.roundRect(xOff - 12, yOff - 40, 24, 12, 4);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.fillRect(xOff - 12, yOff - 34, 24, 4); // Side depth
+    ctx.save();
+    ctx.translate(x + 10, y - 30);
+    // Idle sway or attack rotation
+    const rot = angle || (Math.sin(state.time * 5) * 0.2); 
+    ctx.rotate(rot);
     
-    if (isRaw) {
-        ctx.fillStyle = '#ffcccc'; // Fat
-        ctx.beginPath(); ctx.arc(xOff, yOff - 34, 3, 0, Math.PI*2); ctx.fill();
-    } else {
-        ctx.fillStyle = '#5d4037'; // Grill marks
-        ctx.fillRect(xOff - 8, yOff - 38, 2, 8);
-        ctx.fillRect(xOff + 8, yOff - 38, 2, 8);
+    ctx.strokeStyle = '#5d4037'; // Handle
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(10, -len); ctx.stroke();
+    
+    if (type === 1) { // Spear Tip
+        ctx.fillStyle = '#bdc3c7';
+        ctx.beginPath(); ctx.moveTo(10, -len); ctx.lineTo(5, -len-10); ctx.lineTo(15, -len-10); ctx.fill();
     }
+    ctx.restore();
 }
 
-function drawPerson(x, y, coatColor, hatColor, isMoving, stack = [], isHungry = false) {
-    drawShadow(x, y, 18);
-    const bounce = isMoving ? Math.abs(Math.sin(state.time * 10)) * 3 : 0;
+function drawPerson(p, coatColor, hatColor) {
+    drawShadow(p.x, p.y, 18);
+    const bounce = p.moving ? Math.abs(Math.sin(state.time * 12)) * 4 : 0;
     
-    // Coat
+    // Body
     ctx.fillStyle = coatColor;
-    ctx.beginPath();
-    ctx.roundRect(x - 12, y - 35 - bounce, 24, 30, 8);
-    ctx.fill();
+    ctx.beginPath(); ctx.roundRect(p.x - 12, p.y - 35 - bounce, 24, 30, 8); ctx.fill();
     
     // Head
     ctx.fillStyle = COLORS.playerSkin;
-    ctx.beginPath();
-    ctx.arc(x, y - 42 - bounce, 12, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y - 42 - bounce, 12, 0, Math.PI*2); ctx.fill();
     
-    // Face
-    if (isHungry) {
-        ctx.fillStyle = '#c0392b';
-        ctx.beginPath(); ctx.ellipse(x, y - 38 - bounce, 4, 3, 0, 0, Math.PI); ctx.fill();
-    } 
-
     // Hat
     ctx.fillStyle = hatColor;
-    ctx.beginPath();
-    ctx.arc(x, y - 46 - bounce, 13, Math.PI, 0);
-    ctx.fill();
-
+    ctx.beginPath(); ctx.arc(p.x, p.y - 46 - bounce, 13, Math.PI, 0); ctx.fill();
+    
     // Stack
-    stack.forEach((type, i) => drawMeatItem(x, y - 50 - bounce, type, i, isMoving));
+    p.stack.forEach((type, i) => {
+        ctx.fillStyle = type === 'raw' ? COLORS.meatRaw : COLORS.meatCooked;
+        const yOff = p.y - 50 - bounce - (i*12);
+        ctx.fillRect(p.x - 12, yOff - 8, 24, 10);
+    });
+    
+    // Panic emote
+    if (p.state === 'panic') {
+        ctx.font = '20px Arial'; ctx.fillText('😱', p.x + 10, p.y - 55);
+    }
 }
 
 function drawBear(b) {
-    const breath = 1 + Math.sin(state.time * 1.5 + b.id) * 0.02;
-    const legSwing = Math.sin(state.time * 6 + b.id) * 4;
-    drawShadow(b.x, b.y, 35);
+    const isAggro = b.state === 'chase';
+    const breath = 1 + Math.sin(state.time * (isAggro ? 10 : 2) + b.id) * 0.02;
+    
+    drawShadow(b.x, b.y, 30);
+    drawHealthBar(b.x, b.y - 40, b.hp, b.maxHp, 40);
+
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.scale(breath, breath);
     
-    // Legs
-    ctx.fillStyle = COLORS.bearShadow;
-    ctx.beginPath();
-    ctx.roundRect(-15 + legSwing, -10, 8, 15, 4);
-    ctx.roundRect(5 - legSwing, -10, 8, 15, 4);
-    ctx.fill();
+    // Fur Color (Reddish if hit recently)
+    ctx.fillStyle = b.hitFlash > 0 ? '#ffcccc' : COLORS.bear;
     
     // Body
-    ctx.fillStyle = COLORS.bear;
-    ctx.beginPath(); ctx.roundRect(-25, -30, 45, 28, 14); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -20, 25, 20, 0, 0, Math.PI*2); ctx.fill();
     
     // Head
-    ctx.beginPath(); ctx.arc(-22, -25, 14, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(-30, -34, 5, 0, Math.PI*2); ctx.fill(); // Ears
-    ctx.beginPath(); ctx.arc(-14, -34, 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-18, -25, 12, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-24, -32, 4, 0, Math.PI*2); ctx.fill(); // Ears
+    ctx.beginPath(); ctx.arc(-12, -32, 4, 0, Math.PI*2); ctx.fill();
     
-    // Face & Eyes
+    // Eyes (Angry if chasing)
     ctx.fillStyle = '#333';
-    ctx.beginPath(); ctx.arc(-28, -25, 2.5, 0, Math.PI*2); ctx.fill(); // Eye L
-    ctx.beginPath(); ctx.arc(-18, -25, 2.5, 0, Math.PI*2); ctx.fill(); // Eye R
-    ctx.beginPath(); ctx.ellipse(-23, -20, 3, 2, 0, 0, Math.PI*2); ctx.fill(); // Nose
+    if (isAggro) {
+        ctx.beginPath(); ctx.moveTo(-22, -28); ctx.lineTo(-18, -26); ctx.stroke(); // Angry eyebrows
+        ctx.fillStyle = '#c0392b'; // Red eyes
+    }
+    ctx.beginPath(); ctx.arc(-22, -25, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-14, -25, 2, 0, Math.PI*2); ctx.fill();
 
     ctx.restore();
 }
 
-function drawMachine(m) {
+function drawTurret(t) {
+    drawShadow(t.x, t.y, 25);
     // Base
-    ctx.fillStyle = '#7f8c8d';
-    ctx.fillRect(m.x - 35, m.y - 10, 70, 10);
-    
-    // Belt
+    ctx.fillStyle = COLORS.turretBase;
+    ctx.fillRect(t.x - 15, t.y - 20, 30, 20);
+    // Head (Rotates to target)
     ctx.save();
-    ctx.translate(m.x, m.y - 15);
-    ctx.rotate(-0.05);
-    ctx.fillStyle = COLORS.belt;
-    ctx.fillRect(-35, -5, 70, 20);
-    if (m.processing) {
-        ctx.fillStyle = COLORS.beltMoving;
-        const off = (state.time * 40) % 20;
-        for(let i=-35+off; i<35; i+=20) if(i<30) ctx.fillRect(i, -5, 5, 20);
+    ctx.translate(t.x, t.y - 25);
+    if (t.target) {
+        const angle = Math.atan2(t.target.y - t.y, t.target.x - t.x);
+        ctx.rotate(angle);
+    } else {
+        ctx.rotate(state.time); // Idle spin
     }
+    ctx.fillStyle = COLORS.turretHead;
+    ctx.beginPath(); ctx.roundRect(-15, -10, 30, 20, 5); ctx.fill();
+    // Barrel
+    ctx.fillStyle = '#333';
+    ctx.fillRect(10, -5, 15, 10);
     ctx.restore();
-    
-    // Grill
-    ctx.fillStyle = '#2c3e50';
-    ctx.fillRect(m.x + 5, m.y - 40, 30, 30);
-    if (m.processing) {
-        ctx.fillStyle = `rgba(230, 126, 34, ${0.5 + Math.sin(state.time*12)*0.3})`;
-        ctx.beginPath(); ctx.arc(m.x + 20, m.y - 35, 12, 0, Math.PI*2); ctx.fill();
-    }
-    
-    // Output Stack
-    for(let i=0; i<m.output; i++) drawMeatItem(m.x - 20, m.y - 10, 'cooked', i, false);
 }
 
-// --- LOGIC HELPER ---
-function getDist(o1, o2) { return Math.hypot(o1.x - o2.x, o1.y - o2.y); }
+function drawProjectile(p) {
+    ctx.fillStyle = COLORS.bullet;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
+    // Trail
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath(); ctx.arc(p.x - p.vx*0.05, p.y - p.vy*0.05, 3, 0, Math.PI*2); ctx.fill();
+}
 
-// --- GAME SETUP ---
+// --- LOGIC ---
+
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    wildAreaY = canvas.height * 0.35; // Top 35% is wild area
-    if (player.x === 0) {
-        player.x = canvas.width/2; 
-        player.y = canvas.height * 0.7;
-        player.targetX = player.x; 
-        player.targetY = player.y;
-    }
+    wildAreaY = canvas.height * 0.4;
+    if (player.x === 0) { player.x = canvas.width/2; player.y = canvas.height*0.7; player.targetX = player.x; player.targetY = player.y; }
     setupUnlockZones();
 }
 
 function setupUnlockZones() {
     unlockZones = [];
-    const startY = canvas.height - 100;
     const spacing = 70;
-    const zWidth = 70; // Half size
-    const zHeight = 40;
+    let y = canvas.height - 100;
 
-    // Positioning on the left side
-    let currentY = startY;
-    
-    // Speed Upgrade
-    if (state.upgrades.speed < 3) {
-        const cost = (state.upgrades.speed + 1) * 80;
-        unlockZones.push({ x: 50, y: currentY, w: zWidth, h: zHeight, cost: cost, label: `SPEED`, type: 'speed' });
-        currentY -= spacing;
+    // Weapon (Priority)
+    if (state.upgrades.weapon === 0) {
+        unlockZones.push({ type:'weapon', cost: 150, label: 'SPEAR ($150)', x: 60, y: y, color: COLORS.unlockWeapon });
+        y -= spacing;
     }
-    
-    // Hunter Hire
-    if (state.upgrades.hunters < 3) {
-        const cost = 60 + (state.upgrades.hunters * 100);
-        unlockZones.push({ x: 50, y: currentY, w: zWidth, h: zHeight, cost: cost, label: `HUNTER`, type: 'hunter' });
-        currentY -= spacing;
+
+    // Turrets
+    if (state.upgrades.turrets < 4) {
+        const cost = 200 + (state.upgrades.turrets * 100);
+        unlockZones.push({ type:'turret', cost: cost, label: 'TURRET', x: 60, y: y, color: COLORS.unlockActive });
+        y -= spacing;
     }
-    
-    // Waiter Hire
-    if (state.upgrades.waiters < 3) {
-        const cost = 100 + (state.upgrades.waiters * 150);
-        unlockZones.push({ x: 50, y: currentY, w: zWidth, h: zHeight, cost: cost, label: `WAITER`, type: 'waiter' });
+
+    // Waiter
+    if (state.upgrades.waiters < 2) {
+        unlockZones.push({ type:'waiter', cost: 120, label: 'WAITER', x: 60, y: y, color: COLORS.unlockActive });
+        y -= spacing;
     }
 }
 
-function initGame() {
+function init() {
     resize();
     window.addEventListener('resize', resize);
     
-    // Input
+    // Inputs
     const setTarget = (e) => { 
         const t = e.touches ? e.touches[0] : e;
         player.targetX = t.clientX;
@@ -276,258 +296,335 @@ function initGame() {
     canvas.addEventListener('touchstart', (e) => { e.preventDefault(); setTarget(e); canvas.addEventListener('touchmove', setTarget); }, {passive:false});
     window.addEventListener('touchend', () => canvas.removeEventListener('touchmove', setTarget));
 
-    // World Init
-    entities.push({ type: 'machine', x: canvas.width/2 - 80, y: canvas.height * 0.6, input: 0, output: 0, maxOutput: 5, timer: 0, processing: false });
-    entities.push({ type: 'table', x: canvas.width/2 + 80, y: canvas.height * 0.6, food: 0, maxFood: 5, w: 60, h: 20 });
+    // Initial Objects
+    entities.push({ type: 'machine', x: canvas.width/2 - 80, y: canvas.height * 0.65, input: 0, output: 0, maxOutput: 5, timer: 0 });
+    entities.push({ type: 'table', x: canvas.width/2 + 80, y: canvas.height * 0.65, food: 0, maxFood: 5 });
     
-    // Load Employees
-    for(let i=0; i<state.upgrades.hunters; i++) spawnEmployee('hunter');
-    for(let i=0; i<state.upgrades.waiters; i++) spawnEmployee('waiter');
+    // Restore Upgrades
+    for(let i=0; i<state.upgrades.waiters; i++) spawnEmployee();
+    for(let i=0; i<state.upgrades.turrets; i++) spawnTurret();
 
     requestAnimationFrame(loop);
 }
 
-function spawnEmployee(role) {
+function spawnEmployee() {
+    entities.push({ type:'employee', x: canvas.width/2, y: canvas.height*0.8, stack:[], role:'waiter', state:'idle' });
+}
+function spawnTurret() {
+    // Place turrets in a line protecting the factory
+    const count = entities.filter(e=>e.type==='turret').length;
+    const xPos = (canvas.width/2 - 150) + (count * 100);
+    entities.push({ type:'turret', x: xPos, y: wildAreaY + 30, cooldown: 0, target: null });
+}
+function spawnBear() {
     entities.push({
-        type: 'employee',
-        role: role,
-        x: canvas.width/2,
-        y: canvas.height * 0.8,
-        stack: [],
-        state: 'idle',
-        targetEntity: null,
-        speed: EMPLOYEE_SPEED
+        type: 'bear',
+        id: Math.random(),
+        x: Math.random() * canvas.width,
+        y: Math.random() * (wildAreaY - 50) + 20,
+        hp: state.upgrades.weapon > 0 ? 5 : 3, // Stronger bears if player is strong
+        maxHp: state.upgrades.weapon > 0 ? 5 : 3,
+        state: 'wander',
+        target: null,
+        hitFlash: 0
     });
 }
-
-function spawnBear() {
-    if (entities.filter(e => e.type === 'bear').length < 6) {
-        entities.push({ 
-            type: 'bear', id: Math.random(), 
-            x: Math.random() * canvas.width, 
-            y: Math.random() * (wildAreaY - 100) + 50, // Spawn in top area
-            hp: 1 
-        });
-    }
+function spawnCustomer() {
+    entities.push({ type:'customer', x: Math.random()*canvas.width, y: canvas.height+50, state:'walking', stack:[] });
 }
 
-// --- UPDATE LOOP ---
+// --- UPDATE ---
 let lastTime = 0;
-function loop(timestamp) {
-    const dt = (timestamp - lastTime) / 1000;
-    lastTime = timestamp;
-    state.time = timestamp / 1000;
-    
+function loop(ts) {
+    const dt = (ts - lastTime) / 1000;
+    lastTime = ts;
+    state.time = ts / 1000;
     update(dt);
     draw();
     requestAnimationFrame(loop);
 }
 
 function update(dt) {
-    // 1. Player
-    const pSpeed = BASE_SPEED + (state.upgrades.speed * 30);
-    const dx = player.targetX - player.x, dy = player.targetY - player.y;
-    const dist = Math.hypot(dx, dy);
-    player.moving = dist > 5;
-    if (dist > 5) {
-        player.x += (dx/dist) * pSpeed * dt;
-        player.y += (dy/dist) * pSpeed * dt;
+    // Player Move
+    const pdx = player.targetX - player.x, pdy = player.targetY - player.y;
+    const pdist = Math.hypot(pdx, pdy);
+    player.moving = pdist > 5;
+    if (pdist > 5) {
+        const speed = SETTINGS.playerSpeed + (state.upgrades.speed * 20);
+        player.x += (pdx/pdist) * speed * dt;
+        player.y += (pdy/pdist) * speed * dt;
     }
+    if (player.attackCooldown > 0) player.attackCooldown -= dt;
 
-    // 2. Unlock Zones
-    unlockZones.forEach(zone => {
-        if (state.money >= zone.cost && 
-            player.x > zone.x - zone.w/2 && player.x < zone.x + zone.w/2 &&
-            player.y > zone.y - zone.h/2 && player.y < zone.y + zone.h/2) {
+    // Unlock Zones
+    unlockZones.forEach(z => {
+        if (state.money >= z.cost && Math.hypot(player.x - z.x, player.y - z.y) < 40) {
+            state.money -= z.cost;
+            particles.push({type:'text', x:z.x+20, y:z.y, text:'BOUGHT!', color:'#fff'});
             
-            state.money -= zone.cost;
-            particles.push({ type:'text', text:'UNLOCKED!', x: zone.x + 50, y: zone.y, life: 1.5 });
-            
-            if (zone.type === 'speed') state.upgrades.speed++;
-            if (zone.type === 'hunter') { state.upgrades.hunters++; spawnEmployee('hunter'); }
-            if (zone.type === 'waiter') { state.upgrades.waiters++; spawnEmployee('waiter'); }
+            if (z.type === 'weapon') state.upgrades.weapon = 1;
+            if (z.type === 'waiter') { state.upgrades.waiters++; spawnEmployee(); }
+            if (z.type === 'turret') { state.upgrades.turrets++; spawnTurret(); }
             
             saveGame();
             setupUnlockZones();
         }
     });
 
-    // 3. Entities
+    // Entities
     entities.forEach(e => {
-        // Bear Logic
+        // --- BEAR LOGIC ---
         if (e.type === 'bear') {
-            // Simple wander within wild area
-            if (Math.random() < 0.02) { e.targetX = Math.random()*canvas.width; e.targetY = Math.random()*wildAreaY; }
-            if(e.targetX) moveTo(e, e.targetX, e.targetY, 30, dt);
+            if (e.hitFlash > 0) e.hitFlash -= dt;
 
-            // Player Interaction
-            if (getDist(player, e) < 50 && player.stack.length < MAX_STACK) {
-                e.hp = 0; player.stack.push('raw');
-                spawnPop(e.x, e.y);
+            // 1. AI Behavior
+            if (e.state === 'wander') {
+                e.y += 10 * dt; // Drift down
+                if (Math.random() < 0.02) e.x += (Math.random()-0.5)*50; // Jitter
+                
+                // Spot Targets (Customers > Player)
+                const target = entities.find(c => c.type === 'customer' && c.state !== 'leaving' && c.state !== 'panic' && Math.hypot(c.x-e.x, c.y-e.y) < 250);
+                if (target) { e.state = 'chase'; e.target = target; }
+                else if (e.y > wildAreaY) { 
+                    // Invaded! Find nearest edible thing
+                    e.state = 'chase';
+                    e.target = entities.find(t => t.type === 'table') || player;
+                }
+            } 
+            else if (e.state === 'chase') {
+                if (e.target && !e.target.dead && e.target.state !== 'leaving') {
+                    const speed = SETTINGS.bearChaseSpeed;
+                    const dx = e.target.x - e.x, dy = e.target.y - e.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d > 5) { e.x += (dx/d)*speed*dt; e.y += (dy/d)*speed*dt; }
+                    
+                    // Attack Hit logic
+                    if (d < 30) {
+                        if (e.target.type === 'customer') {
+                            e.target.state = 'panic'; // Scare customer
+                            particles.push({type:'text', x:e.target.x, y:e.target.y-50, text:'AAA!', color:'red'});
+                            e.state = 'wander'; // Job done, wander off
+                        }
+                    }
+                } else { e.state = 'wander'; }
+            }
+
+            // 2. Player Combat
+            const distToPlayer = Math.hypot(player.x - e.x, player.y - e.y);
+            if (distToPlayer < 45 && player.attackCooldown <= 0) {
+                // Hit Bear
+                const dmg = state.upgrades.weapon === 1 ? 3 : 1;
+                e.hp -= dmg;
+                e.hitFlash = 0.2;
+                player.attackCooldown = 0.5; // Seconds between hits
+                
+                // Visual
+                particles.push({type:'hit', x: (player.x+e.x)/2, y: (player.y+e.y)/2});
+                
+                // Knockback
+                e.y -= 30; 
+
+                if (e.hp <= 0) {
+                    player.stack.push('raw');
+                    spawnPop(e.x, e.y);
+                }
             }
         }
 
-        // Machine Logic
-        if (e.type === 'machine') {
-            if (getDist(player, e) < 70) {
-                if (player.stack.length > 0 && player.stack[player.stack.length-1] === 'raw') {
-                    player.stack.pop(); e.input++; e.processing = true;
+        // --- TURRET LOGIC ---
+        if (e.type === 'turret') {
+            if (e.cooldown > 0) e.cooldown -= dt;
+            else {
+                // Find target
+                const target = entities.find(b => b.type === 'bear' && Math.hypot(b.x-e.x, b.y-e.y) < 300);
+                if (target) {
+                    e.target = target; // For rotation
+                    projectiles.push({ x: e.x, y: e.y - 20, targetId: target.id, vx: 0, vy: 0, speed: 400 });
+                    e.cooldown = 1.5; // Fire rate
                 }
-                if (e.output > 0 && player.stack.length < MAX_STACK) {
+            }
+        }
+
+        // --- WAITER LOGIC ---
+        if (e.type === 'employee') {
+            const machine = entities.find(m => m.type === 'machine');
+            const table = entities.find(t => t.type === 'table');
+            if (e.stack.length === 0) {
+                if (machine.output > 0) {
+                    moveEntity(e, machine.x, machine.y, 130, dt);
+                    if (Math.hypot(e.x-machine.x, e.y-machine.y) < 50) { machine.output--; e.stack.push('cooked'); }
+                } else { moveEntity(e, machine.x+40, machine.y+40, 50, dt); }
+            } else {
+                if (table.food < table.maxFood) {
+                    moveEntity(e, table.x, table.y, 130, dt);
+                    if (Math.hypot(e.x-table.x, e.y-table.y) < 50) { e.stack.pop(); table.food++; }
+                }
+            }
+        }
+
+        // --- MACHINE & TABLE ---
+        if (e.type === 'machine') {
+            // Player Interaction
+            if (Math.hypot(player.x - e.x, player.y - e.y) < 60) {
+                if (player.stack.length > 0 && player.stack[player.stack.length-1] === 'raw') {
+                    player.stack.pop(); e.input++;
+                }
+                if (e.output > 0 && player.stack.length < 10) {
                     e.output--; player.stack.push('cooked');
                 }
             }
+            // Process
             if (e.input > 0 && e.output < e.maxOutput) {
                 e.timer += dt;
-                if (Math.random() > 0.94) spawnSmoke(e.x+20, e.y-40);
-                if (e.timer > 1.8) { e.input--; e.output++; e.timer = 0; }
-            } else { e.processing = false; }
+                if (e.timer > 1.5) { e.input--; e.output++; e.timer = 0; }
+            }
         }
-
-        // Table Logic
         if (e.type === 'table') {
-            if (getDist(player, e) < 70 && player.stack.length > 0 && player.stack[player.stack.length-1] === 'cooked' && e.food < e.maxFood) {
-                player.stack.pop(); e.food++;
-            }
-        }
-
-        // Employee Logic (AI)
-        if (e.type === 'employee') {
-            if (e.role === 'hunter') {
-                if (e.state === 'idle') {
-                    const target = entities.find(b => b.type === 'bear' && b.hp > 0);
-                    if (target) { e.targetEntity = target; e.state = 'hunting'; }
-                    else { e.targetEntity = {x: Math.random()*canvas.width, y: wildAreaY/2}; e.state = 'wandering'; }
-                } else if (e.state === 'hunting') {
-                    if (!e.targetEntity || e.targetEntity.hp <= 0) { e.state = 'idle'; return; }
-                    moveTo(e, e.targetEntity.x, e.targetEntity.y, e.speed, dt);
-                    if (getDist(e, e.targetEntity) < 40) {
-                        e.targetEntity.hp = 0; spawnPop(e.targetEntity.x, e.targetEntity.y);
-                        e.stack.push('raw'); e.state = 'delivering';
-                    }
-                } else if (e.state === 'delivering') {
-                    const machine = entities.find(m => m.type === 'machine');
-                    moveTo(e, machine.x - 40, machine.y, e.speed, dt);
-                    if (getDist(e, {x: machine.x-40, y: machine.y}) < 10) {
-                        e.stack.pop(); machine.input++; machine.processing = true;
-                        e.state = 'idle';
-                    }
-                } else if (e.state === 'wandering') {
-                    moveTo(e, e.targetEntity.x, e.targetEntity.y, e.speed*0.5, dt);
-                    if (getDist(e, e.targetEntity) < 10) e.state = 'idle';
-                }
-            }
-            if (e.role === 'waiter') {
-                const machine = entities.find(m => m.type === 'machine');
-                const table = entities.find(t => t.type === 'table');
-                if (e.stack.length === 0) {
-                    if (machine.output > 0) {
-                        moveTo(e, machine.x, machine.y, e.speed, dt);
-                        if (getDist(e, machine) < 60) { machine.output--; e.stack.push('cooked'); }
-                    } else { moveTo(e, machine.x + 50, machine.y + 50, e.speed * 0.5, dt); }
-                } else {
-                    if (table.food < table.maxFood) {
-                        moveTo(e, table.x, table.y, e.speed, dt);
-                        if (getDist(e, table) < 60) { e.stack.pop(); table.food++; }
-                    }
+            // Player Interaction
+            if (Math.hypot(player.x - e.x, player.y - e.y) < 60) {
+                if (player.stack.length > 0 && player.stack[player.stack.length-1] === 'cooked' && e.food < e.maxFood) {
+                    player.stack.pop(); e.food++;
                 }
             }
         }
 
-        // Customer Logic
+        // --- CUSTOMER LOGIC ---
         if (e.type === 'customer') {
             const table = entities.find(t => t.type === 'table');
+            
             if (e.state === 'walking') {
-                moveTo(e, table.x, table.y + 40, 80, dt); // Slower customers
-                if (getDist(e, {x: table.x, y: table.y+40}) < 10) {
+                moveEntity(e, table.x, table.y + 40, 90, dt);
+                if (Math.hypot(e.x - table.x, e.y - (table.y+40)) < 10) {
                     if (table.food > 0) { table.food--; e.state = 'eating'; e.timer = 2; }
                 }
             } else if (e.state === 'eating') {
                 e.timer -= dt;
                 if (e.timer <= 0) {
                     state.money += 15;
-                    particles.push({type:'text', text:'+$15', x: e.x, y: e.y - 60, life:1});
-                    saveGame();
+                    particles.push({type:'text', x:e.x, y:e.y-50, text:'+$15', color:'#2ecc71'});
                     e.state = 'leaving';
+                    saveGame();
                 }
-            } else if (e.state === 'leaving') {
-                e.y += 80 * dt; if (e.y > canvas.height + 50) e.dead = true;
+            } else if (e.state === 'leaving' || e.state === 'panic') {
+                e.y += (e.state==='panic' ? 250 : 100) * dt; // Run fast if panic
+                if (e.y > canvas.height + 50) e.dead = true;
             }
         }
     });
 
-    if (Math.random() < 0.015) spawnBear();
-    if (entities.filter(e => e.type === 'customer').length < 3 && Math.random() < 0.008) {
-        entities.push({ type: 'customer', x: Math.random() * canvas.width, y: canvas.height + 50, state: 'walking', timer: 0 });
-    }
-    
-    entities = entities.filter(e => !e.dead && (e.type !== 'bear' || e.hp > 0));
-    particles.forEach(p => { p.y -= 20 * dt; p.life -= dt; });
-    particles = particles.filter(p => p.life > 0);
-    
-    uiMoney.innerText = state.money;
-    uiMeat.innerText = `${player.stack.length}/${MAX_STACK}`;
-}
-
-function moveTo(entity, tx, ty, spd, dt) {
-    const dx = tx - entity.x, dy = ty - entity.y;
-    const d = Math.hypot(dx, dy);
-    if (d > 5) { entity.x += (dx/d) * spd * dt; entity.y += (dy/d) * spd * dt; }
-}
-
-function spawnPop(x, y) { for(let i=0; i<5; i++) particles.push({ type: 'snow', x: x, y: y, size: 4, life: 0.5 }); }
-function spawnSmoke(x, y) { particles.push({ type:'smoke', x: x, y: y, size: 5, life: 1 }); }
-
-// --- DRAW ---
-function draw() {
-    // Draw Wild Area
-    ctx.fillStyle = COLORS.wildSnow; ctx.fillRect(0, 0, canvas.width, wildAreaY);
-    ctx.fillStyle = COLORS.snow; ctx.fillRect(0, wildAreaY, canvas.width, canvas.height - wildAreaY);
-    ctx.strokeStyle = '#bfe7e9'; ctx.beginPath(); ctx.moveTo(0, wildAreaY); ctx.lineTo(canvas.width, wildAreaY); ctx.stroke();
-    
-    // Draw Unlock Zones (Small, on left)
-    unlockZones.forEach(z => {
-        const canAfford = state.money >= z.cost;
-        ctx.fillStyle = canAfford ? COLORS.unlockActive : COLORS.unlockLocked;
-        ctx.beginPath(); ctx.roundRect(z.x - z.w/2, z.y - z.h/2, z.w, z.h, 8); ctx.fill();
-        ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.stroke();
-        
-        ctx.fillStyle = 'white'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center';
-        ctx.fillText(z.label, z.x, z.y - 4); ctx.fillText(`$${z.cost}`, z.x, z.y + 12);
+    // --- PROJECTILES ---
+    projectiles.forEach(p => {
+        const target = entities.find(b => b.id === p.targetId);
+        if (target && target.hp > 0) {
+            const dx = target.x - p.x, dy = target.y - p.y;
+            const d = Math.hypot(dx, dy);
+            p.x += (dx/d) * p.speed * dt;
+            p.y += (dy/d) * p.speed * dt;
+            
+            if (d < 10) {
+                target.hp -= 1;
+                target.hitFlash = 0.2;
+                p.dead = true;
+                if (target.hp <= 0) { spawnPop(target.x, target.y); }
+            }
+        } else {
+            p.dead = true; // Target lost
+        }
     });
 
-    // Z-Sort & Draw Entities
+    // Cleanup
+    entities = entities.filter(e => !e.dead && (e.type !== 'bear' || e.hp > 0));
+    projectiles = projectiles.filter(p => !p.dead);
+    
+    // Spawners
+    if (Math.random() < SETTINGS.spawnRate) spawnBear();
+    if (entities.filter(e => e.type === 'customer').length < 3 && Math.random() < 0.01) spawnCustomer();
+
+    // Particles
+    particles.forEach(p => { p.y -= 20*dt; p.life = (p.life||1) - dt; });
+    particles = particles.filter(p => p.life > 0);
+
+    // UI
+    uiMoney.innerText = state.money;
+    uiMeat.innerText = `${player.stack.length}/10`;
+}
+
+function moveEntity(e, tx, ty, speed, dt) {
+    const dx = tx - e.x, dy = ty - e.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 5) {
+        e.x += (dx/d) * speed * dt;
+        e.y += (dy/d) * speed * dt;
+        e.moving = true;
+    } else { e.moving = false; }
+}
+
+function spawnPop(x, y) { for(let i=0; i<5; i++) particles.push({type:'snow', x:x, y:y, life:0.5}); }
+
+// --- RENDER ---
+function draw() {
+    // Ground Zones
+    ctx.fillStyle = COLORS.wildSnow; ctx.fillRect(0, 0, canvas.width, wildAreaY);
+    ctx.fillStyle = COLORS.snow; ctx.fillRect(0, wildAreaY, canvas.width, canvas.height - wildAreaY);
+    
+    // Danger Line
+    ctx.strokeStyle = 'rgba(231, 76, 60, 0.3)'; ctx.lineWidth = 4; ctx.setLineDash([20, 20]);
+    ctx.beginPath(); ctx.moveTo(0, wildAreaY); ctx.lineTo(canvas.width, wildAreaY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Unlock Zones
+    unlockZones.forEach(z => {
+        const active = state.money >= z.cost;
+        ctx.fillStyle = active ? z.color || COLORS.unlockActive : COLORS.unlockLocked;
+        ctx.beginPath(); ctx.roundRect(z.x - 30, z.y - 20, 60, 40, 8); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(z.label, z.x, z.y - 2); ctx.fillText(`$${z.cost}`, z.x, z.y + 12);
+    });
+
+    // Render Entities (Z-Sorted)
     const renderList = [
-        { y: player.y, draw: () => drawPerson(player.x, player.y, COLORS.playerCoat, '#2c3e50', player.moving, player.stack) },
+        { y: player.y, draw: () => {
+            drawPerson(player, COLORS.playerCoat, '#2c3e50');
+            drawWeapon(player.x, player.y, state.upgrades.weapon, player.moving, player.attackCooldown > 0 ? -1 : null);
+        }},
         ...entities.map(e => ({
             y: e.y,
             draw: () => {
                 if(e.type === 'bear') drawBear(e);
-                if(e.type === 'machine') drawMachine(e);
-                if(e.type === 'table') {
-                    ctx.fillStyle = '#a1887f'; ctx.fillRect(e.x - 30, e.y - 10, 60, 20);
-                    ctx.fillStyle = 'white'; ctx.fillRect(e.x - 30, e.y - 10, 60, 5);
-                    for(let i=0; i<e.food; i++) drawMeatItem(e.x - 20 + (i*10), e.y, 'cooked', 0, false);
+                if(e.type === 'turret') drawTurret(e);
+                if(e.type === 'customer') drawPerson(e, COLORS.customerCoat, COLORS.customerHat);
+                if(e.type === 'employee') drawPerson(e, COLORS.waiterCoat, '#333');
+                if(e.type === 'machine') {
+                    ctx.fillStyle = '#7f8c8d'; ctx.fillRect(e.x-30, e.y-10, 60, 20); // Simple Machine
+                    ctx.fillStyle = e.processing ? '#e67e22' : '#2c3e50'; ctx.beginPath(); ctx.arc(e.x, e.y-20, 10, 0, Math.PI*2); ctx.fill();
+                    for(let i=0; i<e.output; i++) { ctx.fillStyle = COLORS.meatCooked; ctx.fillRect(e.x-20, e.y-10-(i*10), 20, 8); }
                 }
-                if(e.type === 'customer') drawPerson(e.x, e.y, COLORS.customerCoat, COLORS.customerHat, e.state!=='eating', [], e.state!=='leaving');
-                if(e.type === 'employee') {
-                    const coat = e.role === 'hunter' ? COLORS.hunterCoat : COLORS.waiterCoat;
-                    drawPerson(e.x, e.y, coat, '#333', true, e.stack, false);
+                if(e.type === 'table') {
+                    ctx.fillStyle = '#8d6e63'; ctx.fillRect(e.x-30, e.y-10, 60, 20);
+                    ctx.fillStyle = '#fff'; ctx.fillRect(e.x-30, e.y-10, 60, 5);
+                    for(let i=0; i<e.food; i++) { ctx.fillStyle = COLORS.meatCooked; ctx.fillRect(e.x-20+(i*10), e.y-15, 8, 5); }
                 }
             }
         }))
     ];
-    renderList.sort((a, b) => a.y - b.y);
-    renderList.forEach(o => o.draw());
+    renderList.sort((a,b) => a.y - b.y);
+    renderList.forEach(r => r.draw());
 
+    projectiles.forEach(drawProjectile);
+
+    // Particles
     particles.forEach(p => {
-        if(p.type==='text') { ctx.fillStyle = '#2ecc71'; ctx.font = 'bold 20px Arial'; ctx.fillText(p.text, p.x, p.y); }
-        else if(p.type==='smoke') { ctx.fillStyle='rgba(100,100,100,0.5)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); }
-        else { ctx.fillStyle='white'; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); }
+        if (p.type==='text') { ctx.fillStyle = p.color || '#fff'; ctx.font = 'bold 20px Arial'; ctx.fillText(p.text, p.x, p.y); }
+        else if (p.type==='hit') { 
+            ctx.fillStyle='#fff'; ctx.beginPath(); 
+            ctx.moveTo(p.x, p.y-20); ctx.lineTo(p.x-10, p.y+10); ctx.lineTo(p.x+10, p.y+10); ctx.fill(); 
+        }
+        else { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill(); }
     });
 }
 
-initGame();
+init();
+
 </script>
 </body>
 </html>
